@@ -257,7 +257,7 @@ impl RLWECiphertext {
             .copy_from_slice(self.get_mask().as_ref());
         self.get_mut_mask().as_mut().fill_with(Scalar::zero);
 
-        // TODO(abheet): is this correct?
+        // TODO(abheet): is this correct? - apurba: yes this is working 
         naive_update_with_mul_acc(
             &mut self.get_mut_mask()
                 .as_mut_polynomial_list()
@@ -336,7 +336,7 @@ impl RLWECiphertext {
 
     pub fn update_body_with_mul(&mut self, other: &Polynomial<&mut [Scalar]>) {
         // NOTE(abheet): no tensor in tfhe.
-        // BTW...isn't this multiplication wrong?
+        // BTW...isn't this multiplication wrong? - apurba: yes it is wrong
         //
         /*
         let mut poly_buffer = Polynomial::allocate(
@@ -358,7 +358,7 @@ impl RLWECiphertext {
         // naive_update_with_mul(&mut poly_buffer, other);
         // self.get_mut_body().as_mut().copy_from_slice(poly_buffer.as_ref());
         
-        // apurba
+        // apurba - fixed
         self.get_mut_body().as_mut().fill_with(Scalar::zero);
         naive_update_with_mul_acc(
             &mut self.get_mut_body().as_mut_polynomial(),
@@ -685,7 +685,7 @@ impl RLWESecretKey {
         self.encrypt_rlwe_binary(
             encrypted,
             &binary_encoded,
-            // TODO(abheet): is this correct?
+            // TODO(abheet): is this correct? - apurba: yes encode_encrypt_rlwe_binary seems to work
             // ctx.std,
             UniformBinary,
             &mut ctx.encryption_generator,
@@ -1720,7 +1720,7 @@ fn fourier_update_with_mul(p1: &mut Polynomial<&mut [Scalar]>, p2: &Polynomial<&
 */
 
 // /*
-// TODO(abheet): is this correct? WRONG!
+// TODO(abheet): is this correct? WRONG! - apurba: seems to work after my scratch_buffer fix
 fn fourier_update_with_mul(p1: &mut Polynomial<&mut [Scalar]>, p2: &Polynomial<&[Scalar]>) {
     let fft = Fft128::new(p1.polynomial_size());
     let fft = fft.as_view();
@@ -1841,7 +1841,8 @@ fn fourier_update_with_mul_acc(
 }
 */
 
-// TODO(abheet): is this correct? WRONG!
+// /*
+// TODO(abheet): is this correct? WRONG! - apurba: haven't verified this yet, might work since fourier_update_with_mul is working
 fn fourier_update_with_mul_acc(
     out: &mut Polynomial<&mut [Scalar]>,
     p1: &Polynomial<&[Scalar]>,
@@ -1912,6 +1913,18 @@ fn fourier_update_with_mul_acc(
         stack,
     );
 }
+// */
+
+// apurba - debug
+// fn fourier_update_with_mul_acc(
+//     out: &mut Polynomial<&mut [Scalar]>,
+//     p1: &Polynomial<&[Scalar]>,
+//     p2: &Polynomial<&[Scalar]>,
+// ) {
+//     let mut tmp = Polynomial::new(Scalar::zero(), p1.polynomial_size());
+//     polynomial_wrapping_mul(&mut tmp, p1, p2);
+//     polynomial_wrapping_add_assign(out, &tmp);   // out += p1 * p2
+// }
 
 fn pre_fourier_update_with_multiply_accumulate(
     out: &mut FourierPolynomial<&mut [Complex]>,
