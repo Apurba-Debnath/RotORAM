@@ -1,10 +1,14 @@
+#![allow(unused)]
+
 use crate::{
     codec::Codec,
-    lwe::LWESecretKey,
+    // lwe::LWESecretKey,
     num_types::{One, Scalar, Zero},
     params::TFHEParameters,
     rlwe::RLWESecretKey,
 };
+
+/*
 use concrete_core::{
     backends::fft::private::crypto::ggsw::external_product_scratch,
     backends::fft::private::math::fft::Fft,
@@ -23,23 +27,74 @@ use concrete_core::{
     },
     specification::dispersion::{DispersionParameter, LogStandardDev},
 };
-use concrete_csprng::{generators::SoftwareRandomGenerator, seeders::Seed};
-use dyn_stack::GlobalMemBuffer;
+*/
+
+use tfhe::{
+    core_crypto::fft_impl::fft128::crypto::ggsw::add_external_product_assign_scratch,
+    core_crypto::fft_impl::fft128::math::fft::Fft128,
+
+    core_crypto::entities::plaintext::Plaintext,
+    core_crypto::entities::plaintext_list::PlaintextList,
+
+    core_crypto::commons::generators::DeterministicSeeder,
+    core_crypto::commons::generators::EncryptionRandomGenerator,
+    core_crypto::commons::generators::SecretRandomGenerator,
+
+    core_crypto::commons::math::random::RandomGenerator,
+
+    core_crypto::commons::parameters::{
+        DecompositionBaseLog,
+        DecompositionLevelCount,
+        GlweSize,
+        LweDimension,
+        LweSize,
+        MonomialDegree,
+        PlaintextCount,
+        PolynomialSize
+    },
+
+    core_crypto::commons::math::random::Seeder,
+    core_crypto::seeders::UnixSeeder,
+
+    core_crypto::commons::dispersion::DispersionParameter,
+    core_crypto::commons::dispersion::LogStandardDev,
+
+    core_crypto::commons::math::random::{Uniform, UniformTernary},
+    core_crypto::commons::ciphertext_modulus::CiphertextModulus,
+};
+
+// use concrete_csprng::{generators::SoftwareRandomGenerator, seeders::Seed};
+use tfhe_csprng::{generators::SoftwareRandomGenerator, seeders::Seed};
+// use dyn_stack::GlobalMemBuffer;
+use dyn_stack::PodBuffer;
 use rand::Rng;
 
+// NOTE(abheet): modified! major modification.
 pub struct FftBuffer {
-    pub(crate) fft: Fft,
-    pub(crate) mem: GlobalMemBuffer,
+    // pub(crate) fft: Fft,
+    // pub(crate) mem: GlobalMemBuffer,
+    pub(crate) fft: Fft128,
+    pub(crate) mem: PodBuffer,
 }
 
 impl FftBuffer {
+    // NOTE(abheet): modified!
     pub fn new(poly_size: PolynomialSize) -> Self {
+        /*
         let glwe_size = GlweSize(2);
         let fft = Fft::new(poly_size);
         let mem = GlobalMemBuffer::new(
             external_product_scratch::<Scalar>(glwe_size, poly_size, fft.as_view()).unwrap(),
         );
         Self { fft, mem }
+        */
+
+        let glwe_size = GlweSize(2);
+        let fft128 = Fft128::new(poly_size);
+        let mem = PodBuffer::new(
+            add_external_product_assign_scratch::<Scalar>(glwe_size, 
+                poly_size, fft128.as_view()));
+        Self { fft: fft128, mem }
     }
 }
 
@@ -59,6 +114,9 @@ pub struct Context {
     pub negs_base_log: DecompositionBaseLog,
     pub negs_level_count: DecompositionLevelCount,
     pub codec: Codec,
+    
+    // abheet: new field added!
+    pub modulus: CiphertextModulus<Scalar>,
 }
 
 impl std::fmt::Display for Context {
@@ -142,8 +200,12 @@ impl Context {
             negs_base_log,
             negs_level_count,
             codec,
+
+            // abheet
+            modulus: CiphertextModulus::new(tfhe_params.modulus),
         }
     }
+
     pub const fn lwe_dim(&self) -> LweDimension {
         LweDimension(self.poly_size.0)
     }
@@ -160,20 +222,32 @@ impl Context {
     /// Generate a binary plaintext list.
     pub fn gen_binary_pt(&mut self) -> PlaintextList<Vec<Scalar>> {
         let cnt = self.plaintext_count();
-        let mut ptxt = PlaintextList::allocate(Scalar::zero(), cnt);
+        // let mut ptxt = PlaintextList::allocate(Scalar::zero(), cnt);
+        let mut ptxt = PlaintextList::new(Scalar::zero(), cnt);
+        // self.random_generator
+        //     .fill_tensor_with_random_uniform_binary(ptxt.as_mut_tensor());
         self.random_generator
-            .fill_tensor_with_random_uniform_binary(ptxt.as_mut_tensor());
+            .fill_slice_with_random_uniform_binary(ptxt.as_mut());
         ptxt
     }
 
+    // NOTE(abheet): modified! by default it uses native modulus.
     /// Generate a plaintext list where the coefficients sampled from the plaintext space
     /// defined by the codec.
     pub fn gen_pt(&mut self) -> PlaintextList<Vec<Scalar>> {
         let cnt = self.plaintext_count();
-        let mut ptxt = PlaintextList::allocate(Scalar::zero(), cnt);
+        // let mut ptxt = PlaintextList::allocate(Scalar::zero(), cnt);
+        /*
         self.random_generator.fill_tensor_with_random_uniform_n_lsb(
             ptxt.as_mut_tensor(),
             self.codec.pt_modulus_bits(),
+        );
+        */
+        let mut ptxt = PlaintextList::new(Scalar::zero(), cnt);
+        self.random_generator.fill_slice_with_random_from_distribution_custom_mod(
+            ptxt.as_mut(),
+            Uniform,
+            CiphertextModulus::try_new_power_of_2(self.codec.pt_modulus_bits()).unwrap(),
         );
         ptxt
     }
@@ -183,6 +257,8 @@ impl Context {
         Plaintext(self.random_generator.random_uniform_binary())
     }
 
+    /* 
+    // TODO(abheet): Unused!
     /// Generate a plaintext that has one at index `i` and zero otherwise.
     pub fn gen_demuxed_pt(&mut self, i: usize) -> PlaintextList<Vec<Scalar>> {
         let mut ptxt = PlaintextList::allocate(Scalar::zero(), self.plaintext_count());
@@ -192,23 +268,38 @@ impl Context {
             .get_mut_coefficient() = Scalar::one();
         ptxt
     }
+    */
 
+    // NOTE(abheet): modified!
+    //
     /// Generate a ternay plaintext.
     pub fn gen_ternary_ptxt(&mut self) -> PlaintextList<Vec<Scalar>> {
         let cnt = self.plaintext_count();
-        let mut ptxt = PlaintextList::allocate(Scalar::zero(), cnt);
+        let mut ptxt = PlaintextList::new(Scalar::zero(), cnt);
+        /*
         self.random_generator
             .fill_tensor_with_random_uniform_ternary(ptxt.as_mut_tensor());
+        */
+
+        self.random_generator
+            .fill_slice_with_random_from_distribution(ptxt.as_mut(), UniformTernary);
         ptxt
     }
 
+    // NOTE(abheet): modified!
+    //
     /// Generate a unit plaintext list (all coefficients are 0 except the constant term is 1).
     pub fn gen_unit_pt(&self) -> PlaintextList<Vec<Scalar>> {
-        let mut ptxt = PlaintextList::allocate(Scalar::zero(), self.plaintext_count());
+        let mut ptxt = PlaintextList::new(Scalar::zero(), self.plaintext_count());
+        /*
         *ptxt
             .as_mut_polynomial()
             .get_mut_monomial(MonomialDegree(0))
             .get_mut_coefficient() = Scalar::one();
+        */
+
+        // TODO(abheet): is it correct?
+        ptxt.as_mut()[0] = Scalar::one();
         ptxt
     }
 
@@ -219,7 +310,7 @@ impl Context {
 
     /// Generate a plaintext list where all the coefficients are 0.
     pub fn gen_zero_pt(&self) -> PlaintextList<Vec<Scalar>> {
-        PlaintextList::allocate(Scalar::zero(), self.plaintext_count())
+        PlaintextList::new(Scalar::zero(), self.plaintext_count())
     }
 
     /// Generate a plaintext scalar is zero.
@@ -232,10 +323,13 @@ impl Context {
         RLWESecretKey::generate_binary(self.poly_size, &mut self.secret_generator)
     }
 
+    // NOTE(abheet): add if needed!
+    /*
     /// Generate a LWE secret key.
     pub fn gen_lwe_sk(&mut self) -> LWESecretKey {
         LWESecretKey::generate_binary(self.lwe_dim(), &mut self.secret_generator)
     }
+    */
 
     /// Create a FFT context suitable for external product.
     pub fn gen_fft_ctx(&self) -> FftBuffer {

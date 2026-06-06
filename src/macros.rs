@@ -1,3 +1,4 @@
+#![allow(unused)]
 #[inline]
 fn assert_same_len(a: (usize, Option<usize>), b: (usize, Option<usize>)) {
     debug_assert_eq!(a.1, Some(a.0));

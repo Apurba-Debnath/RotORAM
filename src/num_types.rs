@@ -1,4 +1,5 @@
-use concrete_core::backends::fft::private::c64;
+// use concrete_core::backends::fft::private::c64;
+use tfhe_fft::c64;
 
 pub type Scalar = u64;
 pub type Complex = c64;

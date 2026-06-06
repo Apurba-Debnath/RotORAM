@@ -1,4 +1,7 @@
+#![allow(unused)]
+
 use bitvec::prelude::*;
+/*
 use concrete_core::{
     commons::{
         crypto::encoding::{Plaintext, PlaintextList},
@@ -8,6 +11,21 @@ use concrete_core::{
         DecompositionBaseLog, DecompositionLevelCount, DispersionParameter, LogStandardDev,
         MonomialDegree, PolynomialSize,
     },
+};
+*/
+
+use tfhe::{
+    core_crypto::entities::plaintext::Plaintext,
+    core_crypto::entities::plaintext_list::PlaintextList,
+    core_crypto::commons::parameters::DecompositionBaseLog,
+    core_crypto::commons::parameters::DecompositionLevelCount,
+    core_crypto::commons::dispersion::DispersionParameter,
+    core_crypto::commons::dispersion::LogStandardDev,
+    core_crypto::commons::parameters::MonomialDegree,
+    core_crypto::commons::parameters::PolynomialSize,
+
+    core_crypto::commons::math::random::UniformBinary,
+
 };
 
 use rayon::prelude::*;
@@ -55,6 +73,7 @@ impl Default for Node {
         gen_full_tree(1, &mut processed_one_leaf)
     }
 }
+
 impl Clone for Node {
     fn clone(&self) -> Node {
         match self {
@@ -213,6 +232,7 @@ pub struct Internal {
     pub right: Option<Node>,
 }
 
+
 fn fix_index(node: &mut Internal, i: usize) -> usize {
     node.index = i;
     let j = match &mut node.left {
@@ -325,6 +345,8 @@ pub fn trunc_tree(root: &Option<Node>) -> Option<Node> {
     }
 }
 
+// NOTE(abheet): modified!
+//
 /// Perform the comparison operation between (RLWE) encrypted features and the flattened plaintext decision tree
 /// and then output an iterator of (RGSW) encrypted choice bits.
 pub fn compare_expand<'a>(
@@ -338,7 +360,9 @@ pub fn compare_expand<'a>(
         let cts = client_cts[node.feature]
             .iter()
             .map(|c| {
-                let mut ct = RLWECiphertext::allocate(ctx.poly_size);
+                // abheet: takes extra modulus argument from the context.
+                let mut ct = RLWECiphertext::allocate(ctx.poly_size,
+                    ctx.modulus);
                 ct.fill_with_copy(c);
                 match node.op {
                     Op::LEQ => ct.less_eq_than(node.threshold),
@@ -373,14 +397,20 @@ impl EncNode {
         Self::Internal(Box::new(out))
     }
 
+    // NOTE(abheet): modified!
     /// Evaluate the tree.
     pub fn eval(&self, ctx: &Context, buf: &mut FftBuffer) -> Vec<RLWECiphertext> {
         let max_leaf_bits = ((self.max_leaf() + 1) as f64).log2().ceil() as usize;
-        let mut out = vec![RLWECiphertext::allocate(ctx.poly_size); max_leaf_bits];
-        let mut c = RLWECiphertext::allocate(ctx.poly_size);
-        *c.get_mut_body().as_mut_tensor().first_mut() = Scalar::one();
+        let mut out = vec![
+            // abheet: takes extra modulus argument from the context.
+            RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
+            max_leaf_bits
+        ];
+        // abheet: takes extra modulus argument from the context.
+        let mut c = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
+        c.get_mut_body().as_mut()[0] = Scalar::one();
         ctx.codec
-            .encode(c.get_mut_body().as_mut_tensor().first_mut());
+            .encode(&mut c.get_mut_body().as_mut()[0]);
         eval_enc_node(&mut out, self, c, ctx, buf);
         out
     }
@@ -457,6 +487,7 @@ fn new_enc_node(
     }
 }
 
+// NOTE(abheet): modified!
 fn eval_enc_node(
     out: &mut Vec<RLWECiphertext>,
     node: &EncNode,
@@ -473,7 +504,8 @@ fn eval_enc_node(
             }
         }
         EncNode::Internal(node) => {
-            let mut left = RLWECiphertext::allocate(ctx.poly_size);
+            // abheet: takes extra modulus argument from the context.
+            let mut left = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
             node.ct.external_product_with_buf(&mut left, &b, buf);
             let mut right = b;
             right.update_with_sub(&left);
@@ -502,6 +534,7 @@ pub fn demux_with(
     demux_rec(0, b, bits, ctx, buf)
 }
 
+// NOTE(abheet): modified!
 /// Demultiplex a length n vector of RGSW ciphertexts into
 /// a unit vector of length 2^n.
 pub fn demux(
@@ -510,14 +543,16 @@ pub fn demux(
     buf: &mut FftBuffer,
 ) -> Vec<RLWECiphertext> {
     // NOTE: no need to encrypt here since the "server" generates this ciphertext
-    let mut c = RLWECiphertext::allocate(ctx.poly_size);
-    *c.get_mut_body().as_mut_tensor().first_mut() = Scalar::one();
+    // abheet: takes extra modulus argument from the context.
+    let mut c = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
+    c.get_mut_body().as_mut()[0] = Scalar::one();
     ctx.codec
-        .encode(c.get_mut_body().as_mut_tensor().first_mut());
+        .encode(&mut c.get_mut_body().as_mut()[0]);
 
     demux_with(c, bits, ctx, buf)
 }
 
+// NOTE(abheet): modified!
 fn demux_rec(
     level: usize,
     b: RLWECiphertext,
@@ -526,7 +561,8 @@ fn demux_rec(
     buf: &mut FftBuffer,
 ) -> Vec<RLWECiphertext> {
     assert!(level < bits.len());
-    let mut left = RLWECiphertext::allocate(ctx.poly_size);
+    // abheet: takes extra modulus argument from the context.
+    let mut left = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
     bits[level].external_product_with_buf(&mut left, &b, buf);
     let mut right = b;
     right.update_with_sub(&left);
@@ -543,13 +579,16 @@ fn demux_rec(
     }
 }
 
+// NOTE(abheet): modified!
 /// Every feature v is encrypted as RLWE(1/(B^j n) X^v) for j in 1...\ell
 pub fn encrypt_feature_vector(
     sk: &RLWESecretKey,
     vs: &Vec<usize>,
     ctx: &mut Context,
 ) -> Vec<Vec<RLWECiphertext>> {
-    let mut pt = PlaintextList::allocate(Scalar::zero(), ctx.plaintext_count());
+
+    let mut pt = PlaintextList::new(Scalar::zero(), ctx.plaintext_count());
+
     let logn = log2(ctx.poly_size.0);
     let mut out = Vec::new(); // TODO preallocate
     for v in vs {
@@ -557,13 +596,25 @@ pub fn encrypt_feature_vector(
         for level in 1..=ctx.level_count.0 {
             assert!(*v < ctx.poly_size.0);
             let shift: usize = (Scalar::BITS as usize) - ctx.base_log.0 * level - logn;
-            pt.as_mut_tensor().fill_with_element(Scalar::zero());
-            *pt.as_mut_polynomial()
-                .get_mut_monomial(MonomialDegree(*v))
-                .get_mut_coefficient() = Scalar::one() << shift;
+            pt.as_mut().fill(Scalar::zero());
 
-            let mut ct = RLWECiphertext::allocate(ctx.poly_size);
-            sk.encrypt_rlwe(&mut ct, &pt, ctx.std, &mut ctx.encryption_generator);
+            // *pt.as_mut_polynomial()
+            //     .get_mut_monomial(MonomialDegree(*v))
+            //     .get_mut_coefficient() = Scalar::one() << shift;
+
+            // TODO(abheet): is this correct?
+            pt.as_mut_polynomial().as_mut()[*v] = Scalar::one() << shift;
+
+            // abheet: takes extra modulus argument from the context.
+            let mut ct = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
+
+            // sk.encrypt_rlwe_binary(&mut ct, &pt, ctx.std, 
+            //     &mut ctx.encryption_generator);
+
+            // TODO(abheet): should it be binary?
+            sk.encrypt_rlwe_binary(&mut ct, &pt, UniformBinary, 
+                &mut ctx.encryption_generator);
+
             tmp.push(ct);
         }
         out.push(tmp);
@@ -621,12 +672,13 @@ impl Display for SimulationResult {
     }
 }
 
+// NOTE(abheet): modified!
 fn decrypt_and_recompose(sk: &RLWESecretKey, cts: &Vec<RLWECiphertext>, ctx: &Context) -> Scalar {
     let mut bv: BitVec<Scalar, Lsb0> = BitVec::new();
-    let mut pt = PlaintextList::allocate(Scalar::zero(), ctx.plaintext_count());
+    let mut pt = PlaintextList::new(Scalar::zero(), ctx.plaintext_count());
     for ct in cts {
         sk.decrypt_decode_rlwe(&mut pt, ct, ctx);
-        match pt.as_tensor().first() {
+        match pt.as_ref()[0] {
             0 => bv.push(false),
             1 => bv.push(true),
             _ => panic!("expected binary plaintext"),
@@ -640,7 +692,12 @@ fn decrypt_and_recompose(sk: &RLWESecretKey, cts: &Vec<RLWECiphertext>, ctx: &Co
 /// See the rayon documentation for how to control the number of threads.
 /// Finally, return a `SimulationResult` which mainly consists of the timing
 /// information and the evaluation result.
-pub fn simulate(model: &Node, features: &Vec<Vec<usize>>, parallel: bool) -> SimulationResult {
+pub fn simulate(
+    model: &Node,
+    features: &Vec<Vec<usize>>,
+    parallel: bool
+) -> SimulationResult {
+
     // Client side
     let setup_instant = Instant::now();
     let mut ctx = Context::new(TFHEParameters::default());
@@ -693,6 +750,8 @@ pub fn simulate(model: &Node, features: &Vec<Vec<usize>>, parallel: bool) -> Sim
     )
 }
 
+// NOTE(abheet): modified!
+//
 /// Convert `i` to a bit vector and pad it to length `n`,
 /// and then encrypt it into RGSW ciphertexts.
 pub fn bit_decomposed_rgsw(
@@ -706,7 +765,11 @@ pub fn bit_decomposed_rgsw(
     i_bits.reverse();
 
     let mut a: Vec<RGSWCiphertext> =
-        vec![RGSWCiphertext::allocate(ctx.poly_size, ctx.base_log, ctx.level_count); i_bits.len()];
+        vec![
+            RGSWCiphertext::allocate(ctx.poly_size, ctx.base_log,
+                ctx.level_count, ctx.modulus);
+            i_bits.len()
+        ];
 
     let one = Plaintext(Scalar::one());
     let zero = Plaintext(Scalar::zero());
@@ -716,6 +779,7 @@ pub fn bit_decomposed_rgsw(
     a
 }
 
+// NOTE(abheet): tests have not been migrated yet, DO NOT RUN the tests.
 #[cfg(test)]
 mod test {
     use concrete_core::commons::crypto::encoding::Plaintext;

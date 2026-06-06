@@ -27,27 +27,6 @@
           "cols": 128,
           "iterations": 1
         }
-      },
-      {
-        "Batched": {
-          "rows": 384,
-          "cols": 512,
-          "iterations": 1
-        }
-      },
-      {
-        "Batched": {
-          "rows": 384,
-          "cols": 2048,
-          "iterations": 1
-        }
-      },
-      {
-        "Batched": {
-          "rows": 384,
-          "cols": 4096,
-          "iterations": 1
-        }
       }
     ],
     [

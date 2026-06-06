@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use crate::{
     context::{Context, FftBuffer},
     num_types::{Complex, One, Scalar, ScalarContainer, Zero},
@@ -5,6 +7,7 @@ use crate::{
     utils::mul_const,
 };
 
+/*
 use concrete_core::{
     backends::fft::private::crypto::ggsw::{external_product, FourierGgswCiphertext},
     commons::{
@@ -17,25 +20,57 @@ use concrete_core::{
     },
 };
 use dyn_stack::{DynStack, ReborrowMut};
+*/
 
+use tfhe:: {
+    core_crypto::entities::FourierGgswCiphertext,
+    core_crypto::entities::ggsw_ciphertext::GgswCiphertext,
+    core_crypto::entities::glwe_ciphertext::GlweCiphertext,
+
+    core_crypto::commons::parameters::CiphertextCount,
+    core_crypto::commons::parameters::DecompositionBaseLog,
+    core_crypto::commons::parameters::DecompositionLevelCount,
+    core_crypto::commons::parameters::GlweSize,
+    core_crypto::commons::parameters::MonomialDegree,
+    core_crypto::commons::parameters::PolynomialSize,
+
+    // My additions.
+    core_crypto::commons::ciphertext_modulus::CiphertextModulus,
+    core_crypto::commons::parameters::GlweCiphertextCount,
+
+    core_crypto::fft_impl::fft128::crypto::ggsw::Fourier128GgswCiphertext,
+
+    core_crypto::fft_impl::fft128::crypto::ggsw::add_external_product_assign,
+    core_crypto::algorithms::slice_algorithms::slice_wrapping_add_assign,
+};
+
+use dyn_stack::{PodStack};
+
+// NOTE(abheet): modified!
+// use GgswCiphertext instead of old StandardGgswCiphertext
 #[derive(Debug, Clone)]
 /// An RGSW ciphertext.
 /// It is a wrapper around `StandardGgswCiphertext` from concrete.
-pub struct RGSWCiphertext(pub(crate) StandardGgswCiphertext<ScalarContainer>);
+pub struct RGSWCiphertext(pub(crate) GgswCiphertext<ScalarContainer>);
 
 impl RGSWCiphertext {
+    // NOTE(abheet): modified! takes an extra modulus argument.
     pub fn allocate(
         poly_size: PolynomialSize,
         decomp_base_log: DecompositionBaseLog,
         decomp_level: DecompositionLevelCount,
+
+        // abheet: extra argument added!
+        modulus: CiphertextModulus<Scalar>,
     ) -> Self {
         // TODO consider using Fourier version
-        Self(StandardGgswCiphertext::allocate(
+        Self(GgswCiphertext::new(
             Scalar::zero(),
-            poly_size,
             GlweSize(2),
-            decomp_level,
+            poly_size,
             decomp_base_log,
+            decomp_level,
+            modulus,
         ))
     }
 
@@ -51,16 +86,21 @@ impl RGSWCiphertext {
         self.0.decomposition_base_log()
     }
 
-    pub fn ciphertext_count(&self) -> CiphertextCount {
-        self.0.as_glwe_list().ciphertext_count()
+    pub fn glwe_ciphertext_count(&self) -> GlweCiphertextCount {
+        self.0.as_glwe_list().glwe_ciphertext_count()
     }
 
+    // NOTE(abheet): modified!
     pub fn update_with_add(&mut self, other: &RGSWCiphertext) {
-        self.0
-            .as_mut_tensor()
-            .update_with_wrapping_add(other.0.as_tensor())
+        // self.0
+        //     .as_mut_tensor()
+        //     .update_with_wrapping_add(other.0.as_tensor())
+
+        // TODO(abheet): use custom modulus version.
+        slice_wrapping_add_assign(&mut self.0.as_mut(), other.0.as_ref());
     }
 
+    // NOTE(abheet): modified!
     pub fn external_product_with_buf_glwe(
         &self,
         out: &mut GlweCiphertext<&mut [Scalar]>,
@@ -68,36 +108,27 @@ impl RGSWCiphertext {
         buf: &mut FftBuffer,
     ) {
         let glwe_size = GlweSize(2);
-        let mut transformed = FourierGgswCiphertext::new(
-            vec![
-                Complex::zero();
-                self.polynomial_size().0 / 2
-                    * self.decomposition_level_count().0
-                    * glwe_size.0
-                    * glwe_size.0
-            ]
-            .into_boxed_slice(),
-            self.polynomial_size(),
+        let mut transformed = Fourier128GgswCiphertext::new(
             glwe_size,
+            self.polynomial_size(),
             self.decomposition_base_log(),
             self.decomposition_level_count(),
         );
 
         // this is just a wrapper around buf.mem
-        let mut stack = DynStack::new(&mut buf.mem);
+        let mut stack = PodStack::new(&mut buf.mem);
 
         transformed.as_mut_view().fill_with_forward_fourier(
-            self.0.as_view(),
+            &self.0.as_view(),
             buf.fft.as_view(),
-            stack.rb_mut(),
         );
 
-        external_product(
-            out.as_mut_view(),
-            transformed.as_view(),
-            d.0.as_view(),
+        add_external_product_assign(
+            out,
+            &transformed.as_view(),
+            &d.0.as_view(),
             buf.fft.as_view(),
-            stack.rb_mut(),
+            &mut stack,
         );
     }
 
@@ -120,6 +151,7 @@ impl RGSWCiphertext {
         self.cmux_with_buf(out, ct0, ct1, &mut buf);
     }
 
+    // NOTE(abheet): modified!
     pub fn cmux_with_buf(
         &self,
         out: &mut RLWECiphertext,
@@ -129,15 +161,13 @@ impl RGSWCiphertext {
     ) {
         assert_eq!(ct0.polynomial_size(), ct1.polynomial_size());
         // TODO: consider removing tmp
-        let mut tmp = RLWECiphertext::allocate(ct1.polynomial_size());
-        tmp.0
-            .as_mut_tensor()
-            .as_mut_slice()
-            .clone_from_slice(ct1.0.as_tensor().as_slice());
-        out.0
-            .as_mut_tensor()
-            .as_mut_slice()
-            .clone_from_slice(ct0.0.as_tensor().as_slice());
+        let mut tmp = RLWECiphertext::allocate(ct1.polynomial_size(), 
+            ct0.ciphertext_modulus());
+
+        tmp.0.as_mut().clone_from_slice(ct1.0.as_ref());
+
+        out.0.as_mut().clone_from_slice(ct0.0.as_ref());
+
         tmp.update_with_sub(ct0);
         self.external_product_with_buf(out, &tmp, buf);
     }
@@ -177,9 +207,15 @@ impl RGSWCiphertext {
         self.get_nth_row(self.decomposition_level_count().0 * 2 - 1)
     }
 
+    // NOTE(abheet): modified!
     pub fn get_nth_row(&self, n: usize) -> RLWECiphertext {
-        let mut glwe_ct =
-            GlweCiphertext::allocate(Scalar::zero(), self.polynomial_size(), GlweSize(2));
+        let mut glwe_ct = GlweCiphertext::new(
+            Scalar::zero(),
+            GlweSize(2),
+            self.polynomial_size(),
+            self.0.ciphertext_modulus(),
+        );
+        /*
         glwe_ct.as_mut_tensor().fill_with_copy(
             self.0
                 .as_glwe_list()
@@ -188,9 +224,19 @@ impl RGSWCiphertext {
                 .unwrap()
                 .as_tensor(),
         );
+        */
+
+        // NOTE(abheet): super hacky!, not sure if it is right.
+        let size = glwe_ct.as_ref().len();
+        glwe_ct.as_mut().copy_from_slice(
+            &self.0.as_glwe_list().as_ref()[n*size..n*size + size]
+        );
         RLWECiphertext(glwe_ct)
     }
 
+    // NOTE(abheet): will be added as needed.
+    //
+    /*
     /// Convert the RLWE key switching key to a RGSW ciphertext.
     /// Not recommended to use.
     pub fn from_keyswitch_key(ksk: &RLWEKeyswitchKey) -> Self {
@@ -233,6 +279,7 @@ impl RGSWCiphertext {
     ) {
         self.external_product_with_buf(after, before, buf);
     }
+    */
 
     /// Execute the key switching operation when self is a key switching key.
     pub fn keyswitch_ciphertext(&self, after: &mut RLWECiphertext, before: &RLWECiphertext) {
@@ -247,13 +294,14 @@ pub fn compute_noise_rgsw1(sk: &RLWESecretKey, ct: &RGSWCiphertext, ctx: &Contex
     for level in 0..ctx.level_count.0 {
         let shift = (Scalar::BITS as usize) - ctx.base_log.0 * (level + 1);
         let mut pt = ctx.gen_unit_pt();
-        mul_const(&mut pt.as_mut_tensor(), 1 << shift);
+        mul_const(&mut pt.as_mut(), 1 << shift);
         let noise = compute_noise(sk, &ct.get_nth_row(level * 2 + 1), &pt);
         total_noise += noise;
     }
     total_noise / ctx.level_count.0 as f64
 }
 
+// NOTE(abheet): tests have not been migrated yet, DO NOT RUN the tests.
 #[cfg(test)]
 mod test {
     use super::*;

@@ -74,6 +74,10 @@ pub struct Cli {
     #[clap(long, default_value_t = TFHEParameters::default().plaintext_modulus)]
     pub plaintext_modulus: u64,
 
+    // apurba
+    #[clap(long, default_value_t = TFHEParameters::default().modulus)]
+    pub modulus: u128,
+
     #[clap(long, default_value_t = TFHEParameters::default().secure_seed)]
     pub secure_seed: bool,
 

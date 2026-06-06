@@ -1,6 +1,15 @@
+/*
 use concrete_core::{
     commons::math::{decomposition::SignedDecomposer, polynomial::Polynomial, tensor::AsMutSlice},
     prelude::{DecompositionBaseLog, DecompositionLevelCount},
+};
+*/
+
+use tfhe::{
+    core_crypto::commons::parameters::{DecompositionLevelCount, DecompositionBaseLog},
+    core_crypto::commons::math::decomposition::SignedDecomposer,
+    core_crypto::entities::polynomial::Polynomial,
+    core_crypto::prelude::ContainerMut,
 };
 
 use crate::{num_types::Scalar, utils::log2};
@@ -75,45 +84,55 @@ impl Codec {
         }
     }
 
+    // NOTE(abheet): modified!
+    //
     /// Encode a polynomial.
     pub fn poly_encode<C>(&self, xs: &mut Polynomial<C>)
     where
-        C: AsMutSlice<Element = Scalar>,
+        C: ContainerMut<Element = Scalar>,
     {
-        for coeff in xs.coefficient_iter_mut() {
+        // for coeff in xs.coefficient_iter_mut() {
+        for coeff in xs.iter_mut() {
             self.encode(coeff);
         }
     }
 
+    // NOTE(abheet): modified!
+    //
     pub fn poly_decode<C>(&self, xs: &mut Polynomial<C>)
     where
-        C: AsMutSlice<Element = Scalar>,
+        C: ContainerMut<Element = Scalar>,
     {
-        for coeff in xs.coefficient_iter_mut() {
+        for coeff in xs.iter_mut() {
             self.decode(coeff);
         }
     }
 
+    // NOTE(abheet): modified!
+    //
     /// Encode a ternary polynomial.
     pub fn poly_ternary_encode<C>(xs: &mut Polynomial<C>)
     where
-        C: AsMutSlice<Element = Scalar>,
+        C: ContainerMut<Element = Scalar>,
     {
-        for coeff in xs.coefficient_iter_mut() {
+        for coeff in xs.iter_mut() {
             Self::ternary_encode(coeff);
         }
     }
 
+    // NOTE(abheet): modified!
+    //
     pub fn poly_ternary_decode<C>(xs: &mut Polynomial<C>)
     where
-        C: AsMutSlice<Element = Scalar>,
+        C: ContainerMut<Element = Scalar>,
     {
-        for coeff in xs.coefficient_iter_mut() {
+        for coeff in xs.iter_mut() {
             Self::ternary_decode(coeff);
         }
     }
 }
 
+// NOTE(abheet): tests have not been migrated yet, DO NOT RUN the tests.
 #[cfg(test)]
 mod test {
     use super::*;

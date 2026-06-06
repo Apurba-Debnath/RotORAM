@@ -1,4 +1,7 @@
+#![allow(unused)]
+
 use crate::num_types::{One, Scalar, Zero};
+/*
 use concrete_core::commons::{
     crypto::encoding::PlaintextList,
     math::{
@@ -6,12 +9,22 @@ use concrete_core::commons::{
         tensor::{AsMutSlice, AsMutTensor, AsRefSlice, AsRefTensor, Tensor},
     },
 };
+*/
+
+use tfhe::{
+    core_crypto::entities::plaintext_list::PlaintextList,
+    core_crypto::entities::polynomial::Polynomial,
+    core_crypto::prelude::Container,
+
+    core_crypto::prelude::ContiguousEntityContainer,
+};
+
 use std::fs::File;
 
-pub(crate) fn mul_const<C>(poly: &mut Tensor<C>, c: Scalar)
-where
-    C: AsMutSlice<Element = Scalar>,
-{
+
+// NOTE(abheet): modified!
+//
+pub(crate) fn mul_const(poly: &mut [Scalar], c: Scalar) {
     for coeff in poly.iter_mut() {
         *coeff = coeff.wrapping_mul(c);
     }
@@ -22,27 +35,32 @@ pub const fn log2(input: usize) -> usize {
     core::mem::size_of::<usize>() * 8 - (input.leading_zeros() as usize) - 1
 }
 
+// NOTE(abheet): modified!
+//
 /// Evaluate f(x) on x^k, where k is odd
 pub(crate) fn eval_x_k<C>(poly: &Polynomial<C>, k: usize) -> Polynomial<Vec<Scalar>>
 where
-    C: AsRefSlice<Element = Scalar>,
+    C: Container<Element = Scalar>,
 {
-    let mut out = Polynomial::allocate(Scalar::zero(), poly.polynomial_size());
+    let mut out = Polynomial::new(Scalar::zero(), poly.polynomial_size());
     eval_x_k_in_memory(&mut out, poly, k);
     out
 }
 
+// NOTE(abheet): modified!
+//
 /// Evaluate f(x) on x^k, where k is odd
 pub(crate) fn eval_x_k_in_memory<C>(
     out: &mut Polynomial<Vec<Scalar>>,
     poly: &Polynomial<C>,
     k: usize,
 ) where
-    C: AsRefSlice<Element = Scalar>,
+    C: Container<Element = Scalar>,
 {
     assert_eq!(k % 2, 1);
     assert!(poly.polynomial_size().0.is_power_of_two());
-    *out.as_mut_tensor().get_element_mut(0) = *poly.as_tensor().get_element(0);
+    // *out.as_mut_tensor().get_element_mut(0) = *poly.as_tensor().get_element(0);
+    out.as_mut()[0] = poly.as_ref()[0];
     for i in 1..poly.polynomial_size().0 {
         // i-th term becomes ik-th term, but reduced by n
         let j = i * k % poly.polynomial_size().0;
@@ -51,8 +69,12 @@ pub(crate) fn eval_x_k_in_memory<C>(
         } else {
             Scalar::MAX
         };
+        /*
         let c = *poly.as_tensor().get_element(i);
         *out.as_mut_tensor().get_element_mut(j) = sign.wrapping_mul(c);
+        */
+        let c = poly.as_ref()[i];
+        out.as_mut()[j] = sign.wrapping_mul(c);
     }
 }
 
@@ -85,11 +107,13 @@ pub fn parse_csv(path: &std::path::Path) -> Vec<Vec<usize>> {
     x_test
 }
 
+// NOTE(abheet): modified!
+//
 pub fn pt_to_lossy_u64(pt: &PlaintextList<Vec<Scalar>>) -> u64 {
     let mut out = 0u64;
-    for (i, x) in pt.plaintext_iter().take(64).enumerate() {
-        assert!(x.0 == Scalar::zero() || x.0 == Scalar::one());
-        out += x.0 * (1 << i);
+    for (i, x) in pt.iter().take(64).enumerate() {
+        assert!(*x.0 == Scalar::zero() || *x.0 == Scalar::one());
+        out += *x.0 * (1 << i);
     }
     out
 }

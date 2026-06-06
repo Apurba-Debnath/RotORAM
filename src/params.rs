@@ -12,6 +12,9 @@ pub struct TFHEParameters {
     pub negs_level_count: usize,
     pub plaintext_modulus: u64,
     pub secure_seed: bool,
+
+    // abheet: new field added!
+    pub modulus: u128,
 }
 
 impl Default for TFHEParameters {
@@ -20,13 +23,18 @@ impl Default for TFHEParameters {
             standard_deviation: -55.0,
             polynomial_size: 2048,
             base_log: 5,
-            level_count: 9,
+            level_count: 6,
             key_switch_base_log: 5,
-            key_switch_level_count: 11,
+            key_switch_level_count: 9,
             negs_base_log: 5,
-            negs_level_count: 11,
+            negs_level_count: 9,
             plaintext_modulus: 1 << 8,
             secure_seed: true,
+
+            // abheet: new field added in default parameters, it defaults to 
+            // the 64 bit native modulus.
+            // modulus: 2u64.pow(64) as u128,
+            modulus: 1u128 << 64
         }
     }
 }
