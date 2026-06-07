@@ -226,11 +226,9 @@ impl Server {
         }
     
         // pack the stage-1 constant terms into a single RLWE ciphertext
-        // let packed = self.pack_first_coeffs_lwe(&rot_stage1_cts, lwe_to_rlwe_ksk);
-        let packed = &rot_stage1_cts[0]; 
+        let packed = self.pack_first_coeffs_lwe(&rot_stage1_cts, lwe_to_rlwe_ksk);
     
-        // let result = self.rotation_stage2(&packed, &idx_ct_rgsw_stage2);
-        let result = packed.clone();
+        let result = self.rotation_stage2(&packed, &idx_ct_rgsw_stage2);
     
         // packed
         result

@@ -857,7 +857,8 @@ impl RLWESecretKey {
         // self.0.trivial_encrypt_constant_ggsw(&mut out.0, encoded, ctx.std, &mut ctx.encryption_generator)
     }
 
-    /// Create an RGSW ciphertext of a polynomial.
+    /* // apurba - logic needs fix: currently encrypt_rgsw is not yielding correct result
+    // Create an RGSW ciphertext of a polynomial.
     pub fn encrypt_rgsw(
         &self,
         out: &mut RGSWCiphertext,
@@ -901,6 +902,30 @@ impl RLWESecretKey {
                     &mut m.get_mut_body().as_mut_polynomial(),
                     &buf.as_polynomial()
                 );
+            }
+        }
+    }
+    */
+
+    // apurba - alternate implementation: working
+    pub fn encrypt_rgsw(
+        &self,
+        out: &mut RGSWCiphertext,
+        encoded: &PlaintextList<Vec<Scalar>>,
+        ctx: &mut Context,
+    ) {
+        // Build RGSW(1) with tfhe's own (verified-correct) constant-GGSW encryption,
+        // then turn it into RGSW(encoded) by multiplying every GLWE polynomial of the
+        // GGSW by `encoded`. Scaling a row's mask AND body by m(X) scales that row's
+        // decryption by m(X), so the whole GGSW ends up encrypting m(X) * 1 = m(X).
+        self.encrypt_constant_rgsw(out, &Plaintext(1 as Scalar), ctx);
+    
+        let m = encoded.as_polynomial();
+        for mut glwe in out.0.as_mut_glwe_list().iter_mut() {
+            for mut poly in glwe.as_mut_polynomial_list().iter_mut() {
+                let mut tmp = Polynomial::new(Scalar::zero(), poly.polynomial_size());
+                polynomial_wrapping_mul(&mut tmp, &poly.as_view(), &m);
+                poly.as_mut().copy_from_slice(tmp.as_ref());
             }
         }
     }

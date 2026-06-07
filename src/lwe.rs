@@ -46,6 +46,9 @@ use tfhe::{
     core_crypto::commons::math::random::Distribution,
     core_crypto::algorithms::lwe_encryption::encrypt_lwe_ciphertext,
     core_crypto::commons::math::random::UniformBinary,
+    core_crypto::prelude::{allocate_and_generate_new_lwe_packing_keyswitch_key, 
+        keyswitch_lwe_ciphertext_into_glwe_ciphertext, 
+        LwePackingKeyswitchKeyOwned},
 
     core_crypto::prelude::decrypt_lwe_ciphertext,
 
@@ -289,46 +292,34 @@ impl LWEtoRLWEKeyswitchKey {
     }
 }
 */
-#[derive(Debug, Clone)]
-/// An LWE to RLWE key switching key.
-/// One RGSW ciphertext per LWE-key coefficient `s_i`, each an RGSW
-/// encryption of the *constant* `s_i` under the derived RLWE key.
+
+// apurba - working
+#[derive(Clone)]
+/// LWE -> RLWE packing keyswitch key (tfhe-native).
 pub struct LWEtoRLWEKeyswitchKey {
-    pub(crate) inner: Vec<RGSWCiphertext>,
+    pub(crate) inner: Option<LwePackingKeyswitchKeyOwned<Scalar>>,
 }
 
 impl LWEtoRLWEKeyswitchKey {
-    pub fn allocate(ctx: &Context) -> Self {
-        Self {
-            inner: vec![
-                // NOTE: ks_* params here, to match fill_with_keyswitching_key
-                // and the decomposer used in conv_lwe_to_rlwe.
-                RGSWCiphertext::allocate(
-                    ctx.poly_size,
-                    ctx.ks_base_log,
-                    ctx.ks_level_count,
-                    ctx.modulus,          // <- new modulus arg
-                );
-                ctx.poly_size.0
-            ],
-        }
+    // Placeholder; the real key is built in fill_with_keyswitching_key
+    // (generation needs &mut ctx, which allocate doesn't have).
+    pub fn allocate(_ctx: &Context) -> Self {
+        Self { inner: None }
     }
 
     pub fn fill_with_keyswitching_key(&mut self, sk: &LWESecretKey, ctx: &mut Context) {
-        assert_eq!(ctx.poly_size.0, sk.key_size().0);
+        // output GLWE key = the RLWE interpretation of the LWE key (same coeffs),
+        // which is exactly the key the sample-extracted LWE switches back to.
         let rlwe_sk = sk.to_rlwe_sk();
-        self.inner = Vec::with_capacity(ctx.poly_size.0);
-        // was: for s in sk.0.as_tensor().iter()  -> Tensor API removed
-        for &s in sk.0.as_ref().iter() {
-            let mut rgsw_ct = RGSWCiphertext::allocate(
-                ctx.poly_size,
-                ctx.ks_base_log,
-                ctx.ks_level_count,
-                ctx.modulus,
-            );
-            rlwe_sk.encrypt_constant_rgsw(&mut rgsw_ct, &Plaintext(s), ctx);
-            self.inner.push(rgsw_ct);
-        }
+        self.inner = Some(allocate_and_generate_new_lwe_packing_keyswitch_key(
+            &sk.0,                 // input LWE secret key
+            &rlwe_sk.0,            // output GLWE secret key
+            ctx.ks_base_log,
+            ctx.ks_level_count,
+            UniformBinary,         // matches the noise convention used elsewhere
+            ctx.modulus,
+            &mut ctx.encryption_generator,
+        ));
     }
 }
 
@@ -393,44 +384,19 @@ pub fn conv_lwe_to_rlwe(
     out
 }
 */
+
+// apurba - working
 pub fn conv_lwe_to_rlwe(
     ksks: &LWEtoRLWEKeyswitchKey,
     lwe: &LWECiphertext,
     ctx: &Context,
 ) -> RLWECiphertext {
-    let n = ctx.poly_size.0;
     let mut out = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
-
-    // LWE ciphertext is laid out as [a_0, ..., a_{n-1}, b].
-    let lwe_data = lwe.0.as_ref();
-    let mask = &lwe_data[..n];
-    let body = lwe_data[n];
-
-    let decomposer =
-        SignedDecomposer::<Scalar>::new(ctx.ks_base_log, ctx.ks_level_count);
-
-    // out = - sum_i a_i * RLWE(s_i)
-    for (ksk, &a) in ksks.inner.iter().zip(mask.iter()) {
-        let closest = decomposer.closest_representable(a);
-        for term in decomposer.decompose(closest) {
-            // decomposition level `ell` (1-indexed) has gadget 2^{BITS - base_log*ell};
-            // the matching RGSW message-row is flat index (2*ell - 1).
-            let ell = term.level().0;
-            let mut row = ksk.get_nth_row(2 * ell - 1); // RLWE(s_i * gadget_ell)
-            // scale the whole RLWE (mask AND body) by the signed digit
-            mul_const(row.0.as_mut(), term.value());
-            // accumulate: out -= a_i^{(ell)} * RLWE(s_i * gadget_ell)
-            out.update_with_sub(&row);
-        }
-    }
-
-    // add b to the constant term: out_body[0] += b
-    {
-        let mut get_mut_out_body = out.get_mut_body();
-        let out_body = get_mut_out_body.as_mut();
-        out_body[0] = out_body[0].wrapping_add(body);
-    }
-
+    keyswitch_lwe_ciphertext_into_glwe_ciphertext(
+        ksks.inner.as_ref().expect("KSK not filled — call fill_with_keyswitching_key first"),
+        &lwe.0,
+        &mut out.0,
+    );
     out
 }
 

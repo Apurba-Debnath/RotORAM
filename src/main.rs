@@ -50,11 +50,11 @@ fn single_query(item_count: usize, iterations: usize, tfhe_params: TFHEParameter
 
         // Generate a random index to fetch data from
         
-        // let idx:usize = rand::thread_rng().gen_range(0..item_count);//item_count); //db_rows
+        let idx:usize = rand::thread_rng().gen_range(0..item_count);
         // let idx = 2048; // msb index = 1, lsb index = 0
         // let idx = 2129; // msb index = 1, lsb index = 81
         // let idx = 5; // msb index = 0, lsb index = 5
-        let idx = 0; // msb index = 0, lsb index = 0
+        // let idx = 0; // msb index = 0, lsb index = 0
 
         println!("\nTotal database elements -------------->{:?}",db_rows);
         println!("\nDatabase index to be read ------>{:?}",idx);
@@ -99,7 +99,7 @@ fn single_query(item_count: usize, iterations: usize, tfhe_params: TFHEParameter
         let mut lwe_to_rlwe_ksk = LWEtoRLWEKeyswitchKey::allocate(&client.ctx);
         lwe_to_rlwe_ksk.fill_with_keyswitching_key(&lwe_sk, &mut client.ctx);
 
-        // --- conv_lwe_to_rlwe round-trip sanity check ---
+        /* // apurba - debug: conv_lwe_to_rlwe round-trip sanity check
         {
             use panacea::lwe::{LWECiphertext, conv_lwe_to_rlwe};
             // known plaintext: constant term = 42
@@ -117,9 +117,60 @@ fn single_query(item_count: usize, iterations: usize, tfhe_params: TFHEParameter
             let rlwe_out = conv_lwe_to_rlwe(&lwe_to_rlwe_ksk, &lwe_ct, &client.ctx);
             let mut dec = client.ctx.gen_zero_pt();
             client.sk.decrypt_decode_rlwe(&mut dec, &rlwe_out, &mut client.ctx);
+            println!("---------------------------Debug----------------------------");
             println!("conv round-trip: expected 42, got {}", dec.as_ref()[0]);
+            println!("---------------------------Debug----------------------------");
         }
-
+        */
+        
+        /* // apurba - debug: differential RGSW test: encrypt_constant_rgsw vs encrypt_rgsw
+        {
+            use tfhe::core_crypto::entities::plaintext::Plaintext;
+            println!("---------------------------Debug----------------------------"); 
+            let expected: u64 = 7;
+        
+            // known input: RLWE(Δ·7)
+            let mut pt_in = client.ctx.gen_zero_pt();
+            pt_in.as_mut()[0] = expected;
+            let mut rlwe_in = RLWECiphertext::allocate(client.ctx.poly_size, client.ctx.modulus);
+            client.sk.encode_encrypt_rlwe_binary(&mut rlwe_in, &pt_in, &mut client.ctx);
+        
+            // sanity: the input itself must decrypt to 7
+            let mut chk = client.ctx.gen_zero_pt();
+            client.sk.decrypt_decode_rlwe(&mut chk, &rlwe_in, &mut client.ctx);
+            println!("[rgsw-test] input RLWE decrypts to {} (expected {})", chk.as_ref()[0], expected);
+        
+            // --- path A: tfhe's encrypt_constant_rgsw, message = constant 1 ---
+            let mut rgsw_tfhe = RGSWCiphertext::allocate(
+                client.ctx.poly_size, client.ctx.base_log, client.ctx.level_count, client.ctx.modulus,
+            );
+            client.sk.encrypt_constant_rgsw(&mut rgsw_tfhe, &Plaintext(1u64), &mut client.ctx);
+        
+            let mut out_tfhe = RLWECiphertext::allocate(client.ctx.poly_size, client.ctx.modulus);
+            rgsw_tfhe.external_product(&mut out_tfhe, &rlwe_in);
+        
+            let mut dec_tfhe = client.ctx.gen_zero_pt();
+            client.sk.decrypt_decode_rlwe(&mut dec_tfhe, &out_tfhe, &mut client.ctx);
+            println!("[rgsw-test] encrypt_constant_rgsw(1) (X) RLWE(7) -> {} (expected {})",
+                     dec_tfhe.as_ref()[0], expected);
+        
+            // --- path B: hand-rolled encrypt_rgsw, message = monomial 1*X^0 ---
+            let mut pt_one = client.ctx.gen_zero_pt();
+            pt_one.as_mut()[0] = 1;
+            let mut rgsw_hand = RGSWCiphertext::allocate(
+                client.ctx.poly_size, client.ctx.base_log, client.ctx.level_count, client.ctx.modulus,
+            );
+            client.sk.encrypt_rgsw(&mut rgsw_hand, &pt_one, &mut client.ctx);
+        
+            let mut out_hand = RLWECiphertext::allocate(client.ctx.poly_size, client.ctx.modulus);
+            rgsw_hand.external_product(&mut out_hand, &rlwe_in);
+        
+            let mut dec_hand = client.ctx.gen_zero_pt();
+            client.sk.decrypt_decode_rlwe(&mut dec_hand, &out_hand, &mut client.ctx);
+            println!("[rgsw-test] encrypt_rgsw(1*X^0)      (X) RLWE(7) -> {} (expected {})", dec_hand.as_ref()[0], expected);
+            println!("---------------------------Debug----------------------------");
+        }
+        */
 
         let encode_encr_rot_poly = Instant::now();
         // client.sk.encode_encrypt_rlwe(&mut rot_poly_ct_rlwe_stage1, &rot_poly_pt_stage1, &mut client.ctx);
