@@ -3,7 +3,7 @@ use crate::{
     codec::Codec,
     context::{Context, FftBuffer},
 
-    // NOTE(abheet): these two commented out functions were not being used
+    // NOTE(abc): these two commented out functions were not being used
     // anywhere.
     // lwe::{conv_lwe_to_rlwe, LWECiphertext, LWEtoRLWEKeyswitchKey},
     lwe::{/* conv_lwe_to_rlwe, */ LWECiphertext, /* LWEtoRLWEKeyswitchKey */},
@@ -13,7 +13,7 @@ use crate::{
     utils::{eval_x_k, log2, mul_const},
 };
 
-// NOTE(abheet): old concrete_core things, replaced with tfhe-rs things.
+// NOTE(abc): old concrete_core things, replaced with tfhe-rs things.
 /*
 use concrete_core::{
     backends::fft::private::math::{fft::Fft, polynomial::FourierPolynomial},
@@ -69,7 +69,7 @@ use tfhe::{
     // Newly added.
     core_crypto::commons::ciphertext_modulus::CiphertextModulus,
     core_crypto::algorithms::polynomial_algorithms::{
-        // TODO(abheet): they should be replaced with `_custom_modulus`
+        // TODO(abc): they should be replaced with `_custom_modulus`
         // versions.
         polynomial_wrapping_mul,
         polynomial_wrapping_add_mul_assign,
@@ -77,7 +77,7 @@ use tfhe::{
         polynomial_wrapping_sub_assign,
     },
     core_crypto::algorithms::slice_algorithms::{
-        // TODO(abheet): they should be replaced with `_custom_modulus`
+        // TODO(abc): they should be replaced with `_custom_modulus`
         // versions.
         slice_wrapping_add_assign, 
         slice_wrapping_sub_assign,
@@ -111,7 +111,7 @@ use std::collections::HashMap;
 pub struct RLWECiphertext(pub(crate) GlweCiphertext<ScalarContainer>);
 
 impl RLWECiphertext {
-    // NOTE(abheet): now it takes an extra argument `modulus`.
+    // NOTE(abc): now it takes an extra argument `modulus`.
     pub fn allocate(
         poly_size: PolynomialSize,
         modulus: CiphertextModulus<Scalar>
@@ -123,7 +123,7 @@ impl RLWECiphertext {
         ))
     }
 
-    // NOTE(abheet): new function added!
+    // NOTE(abc): new function added!
     pub fn ciphertext_modulus(&self) -> CiphertextModulus<Scalar> {
         self.0.ciphertext_modulus()
     }
@@ -149,20 +149,20 @@ impl RLWECiphertext {
     }
 
     pub fn clear(&mut self) {
-        // NOTE(abheet): no tensor in tfhe
+        // NOTE(abc): no tensor in tfhe
         // self.0.as_mut_tensor().fill_with(Scalar::zero);
 
         self.0.as_mut().fill_with(Scalar::zero);
     }
 
     pub fn fill_with_copy(&mut self, other: &RLWECiphertext) {
-        // NOTE(abheet): no tensor in tfhe
+        // NOTE(abc): no tensor in tfhe
         // self.0.as_mut_tensor().fill_with_copy(other.0.as_tensor());
 
         self.0.as_mut().copy_from_slice(other.0.as_ref());
     }
 
-    // NOTE(abheet): modified! and replaced with `fill_with_slice`
+    // NOTE(abc): modified! and replaced with `fill_with_slice`
     // Does not uses tensor api in the modified version.
     /*
     pub fn fill_with_tensor<C>(&mut self, t: &Tensor<C>)
@@ -180,7 +180,7 @@ impl RLWECiphertext {
         self.0.as_mut().copy_from_slice(s.as_ref());
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     //
     // pub fn update_mask_with_add<C>(&mut self, other: &Polynomial<C>)
     // where
@@ -196,7 +196,7 @@ impl RLWECiphertext {
     where
         C: Container<Element = Scalar>,
     {
-        // TODO(abheet): is this correct?
+        // TODO(abc): is this correct?
         slice_wrapping_add_assign(
             self.get_mut_mask()
                 .as_mut_polynomial_list()
@@ -208,7 +208,7 @@ impl RLWECiphertext {
         );
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     //
     // pub fn update_mask_with_sub(&mut self, other: &Polynomial<&[Scalar]>) {
     //     self.get_mut_mask()
@@ -218,7 +218,7 @@ impl RLWECiphertext {
     // }
 
     pub fn update_mask_with_sub(&mut self, other: &Polynomial<&[Scalar]>) {
-        // TODO(abheet): is this correct?
+        // TODO(abc): is this correct?
         slice_wrapping_sub_assign(
             self.get_mut_mask()
                 .as_mut_polynomial_list()
@@ -230,7 +230,7 @@ impl RLWECiphertext {
         );
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     //
     // pub fn update_mask_with_mul(&mut self, other: &Polynomial<&mut [Scalar]>) {
     //     let mut poly_buffer = Polynomial::allocate(Scalar::zero(), self.polynomial_size());
@@ -257,7 +257,7 @@ impl RLWECiphertext {
             .copy_from_slice(self.get_mask().as_ref());
         self.get_mut_mask().as_mut().fill_with(Scalar::zero);
 
-        // TODO(abheet): is this correct? - apurba: yes this is working 
+        // TODO(abc): is this correct? - apd: yes this is working 
         naive_update_with_mul_acc(
             &mut self.get_mut_mask()
                 .as_mut_polynomial_list()
@@ -269,7 +269,7 @@ impl RLWECiphertext {
         );
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     //
     // pub fn update_mask_with_mul_with_buf(&mut self, other: &Polynomial<&[Scalar]>) {
     //     fourier_update_with_mul(
@@ -298,7 +298,7 @@ impl RLWECiphertext {
         );
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     //
     // pub fn update_body_with_add<C>(&mut self, other: &Polynomial<C>)
     // where
@@ -319,7 +319,7 @@ impl RLWECiphertext {
         );
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     //
     // pub fn update_body_with_sub(&mut self, other: &Polynomial<&[Scalar]>) {
     //     self.get_mut_body()
@@ -335,8 +335,8 @@ impl RLWECiphertext {
     }
 
     pub fn update_body_with_mul(&mut self, other: &Polynomial<&mut [Scalar]>) {
-        // NOTE(abheet): no tensor in tfhe.
-        // BTW...isn't this multiplication wrong? - apurba: yes it is wrong
+        // NOTE(abc): no tensor in tfhe.
+        // BTW...isn't this multiplication wrong? - apd: yes it is wrong
         //
         /*
         let mut poly_buffer = Polynomial::allocate(
@@ -358,7 +358,7 @@ impl RLWECiphertext {
         // naive_update_with_mul(&mut poly_buffer, other);
         // self.get_mut_body().as_mut().copy_from_slice(poly_buffer.as_ref());
         
-        // apurba - fixed
+        // apd - fixed
         self.get_mut_body().as_mut().fill_with(Scalar::zero);
         naive_update_with_mul_acc(
             &mut self.get_mut_body().as_mut_polynomial(),
@@ -373,7 +373,7 @@ impl RLWECiphertext {
 
     pub fn update_with_add(&mut self, other: &RLWECiphertext) {
 
-        // NOTE(abheet): modified iteration method.
+        // NOTE(abc): modified iteration method.
         //
         // self.update_mask_with_add(&other.get_mask().as_polynomial_list().get_polynomial(0));
         // self.update_body_with_add(&other.get_body().as_polynomial());
@@ -385,7 +385,7 @@ impl RLWECiphertext {
     }
 
     pub fn update_with_sub(&mut self, other: &RLWECiphertext) {
-        // NOTE(abheet): modified iteration method.
+        // NOTE(abc): modified iteration method.
         //
         // self.update_mask_with_sub(&other.get_mask().as_polynomial_list().get_polynomial(0));
         // self.update_body_with_sub(&other.get_body().as_polynomial());
@@ -396,7 +396,7 @@ impl RLWECiphertext {
         self.update_body_with_sub(&other.get_body().as_polynomial());
     }
 
-    // NOTE(abheet): not needed right now.
+    // NOTE(abc): not needed right now.
     //
     // pub fn update_with_monomial_div(&mut self, m: MonomialDegree) {
     //     self.get_mut_body()
@@ -412,7 +412,7 @@ impl RLWECiphertext {
     pub fn trace1(&self, ksk_map: &HashMap<usize, RLWEKeyswitchKey>) -> Self {
         let n = self.0.polynomial_size().0;
 
-        // NOTE(abheet): takes extra argument, the ciphertext modulus.
+        // NOTE(abc): takes extra argument, the ciphertext modulus.
         let mut buf = Self::allocate(PolynomialSize(n), self.ciphertext_modulus());
         let mut out = Self(self.0.clone());
         for i in 1..=log2(n) {
@@ -425,7 +425,7 @@ impl RLWECiphertext {
         out
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     //
     // pub fn trace1_fourier(
     //     &self,
@@ -577,7 +577,7 @@ impl RLWECiphertext {
         self.update_mask_with_mul_with_buf(&t_poly.as_view());
     }
 
-    // NOTE(abheet): no tensor in tfhe!
+    // NOTE(abc): no tensor in tfhe!
     /// Run the not gate on this ciphertext, the ciphertext must encrypt a binary scalar.
     /// If c = (a, b = a s + e + q/2 b), then negating it becomes
     /// (-a, q/2 - b) = (-a, -a s - e + q/2 NOT(b))
@@ -590,7 +590,7 @@ impl RLWECiphertext {
             (*self.get_body().as_ref().first().unwrap()).wrapping_add(delta);
     }
 
-    // NOTE(abheet): no tensor in tfhe!
+    // NOTE(abc): no tensor in tfhe!
     /// Return NOT(self) where self must encrypt a binary scalar.
     pub fn not(&self) -> Self {
         let delta = Scalar::one() << (Scalar::BITS - 1);
@@ -631,7 +631,7 @@ impl RLWESecretKey {
         ))
     }
 
-    // NOTE(abheet): renamed to `fill_with_slice`
+    // NOTE(abc): renamed to `fill_with_slice`
     //
     // pub fn fill_with_tensor<C>(&mut self, t: &Tensor<C>)
     // where
@@ -647,11 +647,11 @@ impl RLWESecretKey {
         self.0.as_mut().copy_from_slice(s.as_ref());
     }
 
-    // NOTE(abheet): this have been split into _binary and _ternary versions
+    // NOTE(abc): this have been split into _binary and _ternary versions
     // that take UniformBinary and UniformTernary distribution as arguments to
     // `poly_encode` internally.
     //
-    // TODO(abheet): is this the right thing to do?...probably not!
+    // TODO(abc): is this the right thing to do?...probably not!
     //
     // /// Encode and then encrypt the plaintext pt.
     // pub fn encode_encrypt_rlwe(
@@ -671,7 +671,7 @@ impl RLWESecretKey {
     //     );
     // }
 
-    // NOTE(abheet): renamed from `encode_encrypt_rlwe`
+    // NOTE(abc): renamed from `encode_encrypt_rlwe`
     /// Encode and then encrypt the plaintext pt.
     pub fn encode_encrypt_rlwe_binary( /* encode_encrypt_rlwe */
         &self,
@@ -685,14 +685,14 @@ impl RLWESecretKey {
         self.encrypt_rlwe_binary(
             encrypted,
             &binary_encoded,
-            // TODO(abheet): is this correct? - apurba: yes encode_encrypt_rlwe_binary seems to work
+            // TODO(abc): is this correct? - apd: yes encode_encrypt_rlwe_binary seems to work
             // ctx.std,
             UniformBinary,
             &mut ctx.encryption_generator,
         );
     }
 
-    // NOTE(abheet): renamed from `ternary_encrypt_rlwe`
+    // NOTE(abc): renamed from `ternary_encrypt_rlwe`
     /// Encode and then encrypt the plaintext pt.
     pub fn encode_encrypt_rlwe_ternary( /* ternary_encrypt_rlwe */
         &self,
@@ -705,14 +705,14 @@ impl RLWESecretKey {
         self.encrypt_rlwe_ternary(
             encrypted,
             &ternary_encoded,
-            // TODO(abheet): is this correct?
+            // TODO(abc): is this correct?
             // ctx.std,
             UniformTernary,
             &mut ctx.encryption_generator,
         );
     }
 
-    // NOTE(abheet): modified!, split into binary and ternary versions and use
+    // NOTE(abc): modified!, split into binary and ternary versions and use
     // newer tfhe-rs APIs
     //
     // /// Encrypt a plaintext pt.
@@ -730,16 +730,16 @@ impl RLWESecretKey {
 
     /// Encrypt a plaintext pt.
     // TODO: change API to use Context
-    // NOTE(abheet): this is the binary version, ternary version also exists.
+    // NOTE(abc): this is the binary version, ternary version also exists.
     pub fn encrypt_rlwe_binary(
         &self,
         encrypted: &mut RLWECiphertext,
         pt: &PlaintextList<Vec<Scalar>>,
         // noise_parameter: impl DispersionParameter,
-        noise_parameter: UniformBinary, // NOTE(abheet): is it sound?
+        noise_parameter: UniformBinary, // NOTE(abc): is it sound?
         generator: &mut EncryptionRandomGenerator<SoftwareRandomGenerator>,
     ) {
-        // abheet: use the newer `encrypt_glwe_ciphertext` function from tfhe-rs.
+        // abc: use the newer `encrypt_glwe_ciphertext` function from tfhe-rs.
         encrypt_glwe_ciphertext(
             &self.0,
             &mut encrypted.0,
@@ -749,12 +749,12 @@ impl RLWESecretKey {
         );
     }
 
-    // NOTE(abheet): the ternary version.
+    // NOTE(abc): the ternary version.
     pub fn encrypt_rlwe_ternary(
         &self,
         encrypted: &mut RLWECiphertext,
         pt: &PlaintextList<Vec<Scalar>>,
-        noise_parameter: UniformTernary, // NOTE(abheet): is it sound?
+        noise_parameter: UniformTernary, // NOTE(abc): is it sound?
         generator: &mut EncryptionRandomGenerator<SoftwareRandomGenerator>,
     ) {
         encrypt_glwe_ciphertext(
@@ -766,7 +766,7 @@ impl RLWESecretKey {
         );
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     /// Encrypt a scalar.
     pub fn encrypt_constant_rlwe(
         &self,
@@ -782,25 +782,25 @@ impl RLWESecretKey {
             .get_mut_coefficient() = pt.0;
         */
 
-        // TODO(abheet): its a hack but is it correct?
+        // TODO(abc): its a hack but is it correct?
         // Setting the first value in the array to be pt.0
         encoded.as_mut_polynomial().as_mut()[0] = pt.0;
 
-        // abheet: use the newer `encrypt_glwe_ciphertext` function from tfhe-rs.
+        // abc: use the newer `encrypt_glwe_ciphertext` function from tfhe-rs.
         encrypt_glwe_ciphertext(
             &self.0,
             &mut encrypted.0,
             &encoded,
             // ctx.std,
-            UniformBinary, // TODO(abheet): is it correct?
+            UniformBinary, // TODO(abc): is it correct?
             &mut ctx.encryption_generator,
         );
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     /// Decrypt a RLWE ciphertext.
     pub fn decrypt_rlwe(&self, pt: &mut PlaintextList<Vec<Scalar>>, encrypted: &RLWECiphertext) {
-        // abheet: use the newer `decrypt_glwe_ciphertext` function from tfhe-rs.
+        // abc: use the newer `decrypt_glwe_ciphertext` function from tfhe-rs.
         decrypt_glwe_ciphertext(
             &self.0,
             &encrypted.0,
@@ -829,7 +829,7 @@ impl RLWESecretKey {
         Codec::poly_ternary_decode(&mut pt.as_mut_polynomial());
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     /// Create an RGSW ciphertext of a constant.
     pub fn encrypt_constant_rgsw(
         &self,
@@ -844,12 +844,12 @@ impl RLWESecretKey {
         //     &mut ctx.encryption_generator
         // );
 
-        // abheet: use this newer function.
+        // abc: use this newer function.
         encrypt_constant_ggsw_ciphertext(
             &self.0,
             &mut out.0,
             Cleartext(pt.0),
-            UniformBinary, // TODO(abheet): is this correct?
+            UniformBinary, // TODO(abc): is this correct?
             &mut ctx.encryption_generator,
         );
 
@@ -857,7 +857,7 @@ impl RLWESecretKey {
         // self.0.trivial_encrypt_constant_ggsw(&mut out.0, encoded, ctx.std, &mut ctx.encryption_generator)
     }
 
-    /* // apurba - logic needs fix: currently encrypt_rgsw is not yielding correct result
+    /* // apd - logic needs fix: currently encrypt_rgsw is not yielding correct result
     // Create an RGSW ciphertext of a polynomial.
     pub fn encrypt_rgsw(
         &self,
@@ -876,7 +876,7 @@ impl RLWESecretKey {
             if i % 2 == 0 {
                 // in this case we're in the "top half" of the ciphertext
 
-                // NOTE(abheet): modified!
+                // NOTE(abc): modified!
                 /*
                 m.get_mut_mask()
                     .as_mut_polynomial_list()
@@ -891,7 +891,7 @@ impl RLWESecretKey {
             } else {
                 // this is the "bottom half"
 
-                // NOTE(abheet): modified!
+                // NOTE(abc): modified!
                 /*
                 m.get_mut_body()
                     .as_mut_polynomial()
@@ -907,7 +907,7 @@ impl RLWESecretKey {
     }
     */
 
-    // apurba - alternate implementation: working
+    // apd - alternate implementation: working
     pub fn encrypt_rgsw(
         &self,
         out: &mut RGSWCiphertext,
@@ -951,7 +951,7 @@ impl RLWESecretKey {
         self.0.polynomial_size()
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     /// Compute RGSW(-s), where s is self
     pub fn neg_gsw(&self, ctx: &mut Context) -> RGSWCiphertext {
         let neg_sk = {
@@ -961,12 +961,17 @@ impl RLWESecretKey {
             }
             pt
         };
-        // NOTE(abheet): takes the extra modulus parameter.
+        // NOTE(abc): takes the extra modulus parameter.
         let mut neg_sk_ct =
             RGSWCiphertext::allocate(ctx.poly_size, ctx.negs_base_log, 
                 ctx.negs_level_count, ctx.modulus);
         self.encrypt_rgsw(&mut neg_sk_ct, &neg_sk, ctx);
         neg_sk_ct
+    }
+
+    /// Returns the secret key coefficients as a Vec<Scalar>.
+    pub fn coefficients(&self) -> Vec<Scalar> {
+        self.0.as_ref().to_vec()
     }
 }
 
@@ -979,14 +984,14 @@ pub struct RLWEKeyswitchKey {
     polynomial_size: PolynomialSize,
     subs_k: usize,
 
-    // abheet: new field added!
+    // abc: new field added!
     modulus: CiphertextModulus<Scalar>
 }
 
 impl RLWEKeyswitchKey {
-    // NOTE(abheet): now it needs an extra argument of type CiphertextModulus.
+    // NOTE(abc): now it needs an extra argument of type CiphertextModulus.
     pub fn allocate(
-        // TODO(abheet): what to do with all these fields?, are they compatible
+        // TODO(abc): what to do with all these fields?, are they compatible
         // with variable modulus.
         decomp_base_log: DecompositionBaseLog,
         decomp_level_count: DecompositionLevelCount,
@@ -1017,7 +1022,7 @@ impl RLWEKeyswitchKey {
         self.polynomial_size
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     //
     /// Fill this object with the appropriate key switching key
     /// that is used for the substitution (subs) operation
@@ -1028,7 +1033,7 @@ impl RLWEKeyswitchKey {
         after_key: &RLWESecretKey,
         k: usize,
         // noise_parameters: impl DispersionParameter,
-        noise_parameters: UniformBinary, // TODO(abheet): is this sound?
+        noise_parameters: UniformBinary, // TODO(abc): is this sound?
         generator: &mut EncryptionRandomGenerator<SoftwareRandomGenerator>,
     ) {
         // TODO reduce copy
@@ -1050,7 +1055,7 @@ impl RLWEKeyswitchKey {
         self.subs_k = k;
     }
 
-    // TODO(abheet): modified!
+    // TODO(abc): modified!
     //
     /// Fill this object with the appropriate key switching key
     /// that transforms ciphertexts under `before_key` to ciphertexts under `after_key`.
@@ -1059,7 +1064,7 @@ impl RLWEKeyswitchKey {
         before_key: &RLWESecretKey,
         after_key: &RLWESecretKey,
         // noise_parameters: impl DispersionParameter,
-        noise_parameters: UniformBinary, // TODO(abheet): is this sound?
+        noise_parameters: UniformBinary, // TODO(abc): is this sound?
         generator: &mut EncryptionRandomGenerator<SoftwareRandomGenerator>,
     ) {
         assert_eq!(before_key.0.as_polynomial_list().polynomial_count().0, 1);
@@ -1136,7 +1141,7 @@ impl RLWEKeyswitchKey {
         */
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     //
     /// Run key switching.
     pub fn keyswitch_ciphertext(&self, after: &mut RLWECiphertext, before: &RLWECiphertext) {
@@ -1212,7 +1217,7 @@ impl RLWEKeyswitchKey {
         }
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     /// The key switching key must be of the form s(X^k) to s(X),
     /// i.e., `fill_with_subs_keyswitch_key` must be called.
     pub fn subs(&self, after: &mut RLWECiphertext, before: &RLWECiphertext) {
@@ -1246,21 +1251,21 @@ impl RLWEKeyswitchKey {
     }
 }
 
-// NOTE(abheet): modified!, major modification.
+// NOTE(abc): modified!, major modification.
 #[derive(Debug, Clone)]
 /// An RLWE ciphertext in the Fourier domain.
 pub struct Fourier128RLWECiphertext {
     pub mask: Fourier128Polynomial<Vec<f64>>,
     pub body: Fourier128Polynomial<Vec<f64>>,
 
-    // abheet: new field added!
+    // abc: new field added!
     pub modulus: CiphertextModulus<Scalar>,
 }
 
 impl Fourier128RLWECiphertext {
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     pub fn new(poly_size: usize, modulus: CiphertextModulus<Scalar>) -> Self {
-        // TODO(abheet): should the size be divided by 2 or 4?
+        // TODO(abc): should the size be divided by 2 or 4?
         let fourier_size = poly_size / 2;
         Self {
             /*
@@ -1291,7 +1296,7 @@ impl Fourier128RLWECiphertext {
         }
     }
 
-    // NOTE(abheet): add as needed! currently not being needed anywhere.
+    // NOTE(abc): add as needed! currently not being needed anywhere.
     //
     /*
     /// Convert the ciphertext back to standard domain.
@@ -1352,7 +1357,7 @@ impl Fourier128RLWECiphertext {
     */
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 #[derive(Debug, Clone)]
 /// An RLWE key switching key in the Fourier domain.
 pub struct FourierRLWEKeyswitchKey {
@@ -1362,7 +1367,7 @@ pub struct FourierRLWEKeyswitchKey {
     polynomial_size: PolynomialSize,
     subs_k: usize,
 
-    // abheet: new field added!
+    // abc: new field added!
     modulus: CiphertextModulus<Scalar>,
 }
 
@@ -1505,7 +1510,7 @@ impl FourierRLWEKeyswitchKey {
         */
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     /// Perform the substitution operation that converts RLWE(p(X)) to RLWE(p(X^k)).
     /// The key switching key must be of the form s(X^k) to s(X).
     pub fn subs(&self, after: &mut Fourier128RLWECiphertext, before: &RLWECiphertext) {
@@ -1534,7 +1539,7 @@ impl FourierRLWEKeyswitchKey {
     }
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 /// Generate all the key switching keys needed for the substitution operation.
 pub fn gen_all_subs_ksk(
     after_key: &RLWESecretKey,
@@ -1554,7 +1559,7 @@ pub fn gen_all_subs_ksk(
             after_key,
             k,
             // ctx.std,
-            // TODO(abheet): is it correct?
+            // TODO(abc): is it correct?
             UniformBinary,
             &mut ctx.encryption_generator,
         );
@@ -1563,7 +1568,7 @@ pub fn gen_all_subs_ksk(
     hm
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 /// Generate all the key switching keys needed for the substitution operation
 /// in the Fourier domain.
 pub fn gen_all_subs_ksk_fourier(
@@ -1584,7 +1589,7 @@ pub fn gen_all_subs_ksk_fourier(
             after_key,
             k,
             // ctx.std,
-            // TODO(abheet): is it correct?
+            // TODO(abc): is it correct?
             UniformBinary,
             &mut ctx.encryption_generator,
         );
@@ -1593,7 +1598,7 @@ pub fn gen_all_subs_ksk_fourier(
     hm
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 /// Expand/convert RLWE ciphertexts to an RGSW ciphertext.
 /// The number of RLWE ciphertexts is defined by the decomposition level.
 pub fn expand(
@@ -1619,7 +1624,7 @@ pub fn expand(
     out
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 /// Same as expand but using key switching keys in the Fourier domain.
 #[allow(clippy::ptr_arg)]
 pub fn expand_fourier(
@@ -1647,7 +1652,7 @@ pub fn expand_fourier(
     out
 }
 
-// NOTE(abheet): commented out because nothing is currently using it.
+// NOTE(abc): commented out because nothing is currently using it.
 //
 /*
 /// Use the slower method to convert a set of scaled RLWE ciphertext
@@ -1678,7 +1683,7 @@ pub fn expand_slow(
 }
 */
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 pub fn decomposed_rlwe_to_rgsw(
     cs: &[RLWECiphertext],
     neg_s: &RGSWCiphertext,
@@ -1699,7 +1704,7 @@ pub fn decomposed_rlwe_to_rgsw(
     out
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 //
 /*
 fn fourier_update_with_mul(p1: &mut Polynomial<&mut [Scalar]>, p2: &Polynomial<&[Scalar]>) {
@@ -1745,7 +1750,7 @@ fn fourier_update_with_mul(p1: &mut Polynomial<&mut [Scalar]>, p2: &Polynomial<&
 */
 
 // /*
-// TODO(abheet): is this correct? WRONG! - apurba: seems to work after my scratch_buffer fix
+// TODO(abc): is this correct? WRONG! - apd: seems to work after my scratch_buffer fix
 fn fourier_update_with_mul(p1: &mut Polynomial<&mut [Scalar]>, p2: &Polynomial<&[Scalar]>) {
     let fft = Fft128::new(p1.polynomial_size());
     let fft = fft.as_view();
@@ -1799,7 +1804,7 @@ fn fourier_update_with_mul(p1: &mut Polynomial<&mut [Scalar]>, p2: &Polynomial<&
     // let mut scratch = vec![0u8; 4 * n * size_of::<f64>()];
     // let mut stack = dyn_stack::PodStack::new(&mut scratch);
 
-    // apurba
+    // apd
     let mut scratch_buffer = dyn_stack::PodBuffer::new(fft.backward_scratch());
     let mut stack = dyn_stack::PodStack::new(&mut scratch_buffer);
 
@@ -1814,14 +1819,14 @@ fn fourier_update_with_mul(p1: &mut Polynomial<&mut [Scalar]>, p2: &Polynomial<&
 }
 // */
 
-// apurba - debug
+// apd - debug
 // fn fourier_update_with_mul(p1: &mut Polynomial<&mut [Scalar]>, p2: &Polynomial<&[Scalar]>) {
 //     let mut tmp = Polynomial::new(Scalar::zero(), p1.polynomial_size());
 //     polynomial_wrapping_mul(&mut tmp, &p1.as_view(), p2);   // exact mod X^N + 1
 //     p1.as_mut().copy_from_slice(tmp.as_ref());
 // }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 //
 /*
 fn fourier_update_with_mul_acc(
@@ -1867,7 +1872,7 @@ fn fourier_update_with_mul_acc(
 */
 
 // /*
-// TODO(abheet): is this correct? WRONG! - apurba: haven't verified this yet, might work since fourier_update_with_mul is working
+// TODO(abc): is this correct? WRONG! - apd: haven't verified this yet, might work since fourier_update_with_mul is working
 fn fourier_update_with_mul_acc(
     out: &mut Polynomial<&mut [Scalar]>,
     p1: &Polynomial<&[Scalar]>,
@@ -1925,7 +1930,7 @@ fn fourier_update_with_mul_acc(
     // let mut scratch = vec![0u8; 4 * n * size_of::<f64>()];
     // let mut stack = dyn_stack::PodStack::new(&mut scratch);
 
-    // apurba
+    // apd
     let mut scratch_buffer = dyn_stack::PodBuffer::new(fft.backward_scratch());
     let mut stack = dyn_stack::PodStack::new(&mut scratch_buffer);
 
@@ -1940,7 +1945,7 @@ fn fourier_update_with_mul_acc(
 }
 // */
 
-// apurba - debug
+// apd - debug
 // fn fourier_update_with_mul_acc(
 //     out: &mut Polynomial<&mut [Scalar]>,
 //     p1: &Polynomial<&[Scalar]>,
@@ -1973,7 +1978,7 @@ fn pre_fourier_update_with_two_multiply_accumulate(
     }
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 //
 pub fn naive_update_with_mul_acc<M, C>(
     out: &mut Polynomial<M>,
@@ -1988,7 +1993,7 @@ pub fn naive_update_with_mul_acc<M, C>(
     polynomial_wrapping_add_mul_assign(out, p1, p2);
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 //
 pub fn naive_update_with_mul<M, C>(p1: &mut Polynomial<M>, p2: &Polynomial<C>)
 where
@@ -2001,7 +2006,7 @@ where
 }
 
 
-// NOTE(abheet): these two functions were not being used by anything.
+// NOTE(abc): these two functions were not being used by anything.
 //
 /*
 /// Create RLWE ciphertexts that are suitable to be used by expand.
@@ -2054,7 +2059,7 @@ pub fn make_decomposed_rlwe_ct2(
 }
 */
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 //
 /// Compute the noise for ciphertext `ct`
 /// given the (possibly encoded) plaintext `ptxt`.
@@ -2085,7 +2090,7 @@ where
     (max_e as f64).log2()
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 // Does not uses tensor api now.
 //
 pub fn compute_noise_ternary<C>(
@@ -2102,7 +2107,7 @@ where
     compute_noise(sk, ct, &tmp)
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 // Does not uses tensor api now.
 //
 /// Compute the noise for ciphertext `ct`
@@ -2123,7 +2128,7 @@ where
     compute_noise(sk, ct, &tmp)
 }
 
-// NOTE(abheet): tests have not been migrated yet, DO NOT RUN the tests.
+// NOTE(abc): tests have not been migrated yet, DO NOT RUN the tests.
 #[cfg(test)]
 mod test {
 

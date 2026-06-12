@@ -95,7 +95,7 @@ impl Client {
         self.sk.neg_gsw(&mut self.ctx)
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     /// Generate a dummy database for performance testing.
     pub fn gen_dummy_database(
         &mut self,
@@ -129,7 +129,7 @@ impl Client {
                 let (first_r, first_c) = hash.hash_to_tuple(0, i, self.cols);
                 assert!(first_r < self.rows && first_c < self.cols);
 
-                // TODO(abheet): ternary or binary, or something more generic?
+                // TODO(abc): ternary or binary, or something more generic?
                 self.sk
                     .encode_encrypt_rlwe_binary(&mut db[first_r][first_c], &pt_i, &mut self.ctx);
                 pt_i
@@ -162,7 +162,7 @@ impl Client {
     }
 
     /*
-    // apurba
+    // apd
     // Generate a dummy database for performance testing.
     // pub fn gen_dummy_database(&mut self) -> (Vec<PlaintextList<Vec<Scalar>>>, Vec<Vec<RLWECiphertext>>) {
     pub fn gen_dummy_database(&mut self) -> Vec<u64> {
@@ -208,7 +208,7 @@ impl Client {
     }
     */
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     fn gen_enc_op(&mut self, op: &OP) -> EncOP {
         let mut enc: RGSWCiphertext = RGSWCiphertext::allocate(self.ctx.poly_size,
             self.ctx.base_log, self.ctx.level_count, self.ctx.modulus);
@@ -221,12 +221,12 @@ impl Client {
         EncOP(enc)
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     fn enc_data_rlwe(&mut self, alpha: &PlaintextList<Vec<Scalar>>) -> RLWECiphertext {
         let mut out: RLWECiphertext = RLWECiphertext::allocate(
             self.ctx.poly_size, self.ctx.modulus);
 
-        // TODO(abheet): ternary or binary, or something more generic?
+        // TODO(abc): ternary or binary, or something more generic?
         self.sk.encode_encrypt_rlwe_binary(&mut out, alpha, &mut self.ctx);
         out
     }
@@ -301,7 +301,7 @@ impl Client {
     }
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 //
 fn rw(
     op: &EncOP,
@@ -315,7 +315,7 @@ fn rw(
     c0
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 //
 // process one query
 fn process_one_mt(
@@ -378,7 +378,7 @@ fn process_one_mt(
     (y, ls)
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 //
 // multi threaded with a single query
 fn update_db_mt(
@@ -416,7 +416,7 @@ fn update_db_mt(
     })
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 //
 // single threaded
 // note that just setting rayon to use a single thread
@@ -468,7 +468,7 @@ fn process_one_st(
     (y, ls)
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 //
 fn update_db_st(
     query: &ClientQuery,
@@ -562,7 +562,7 @@ impl Server {
         let tmps = queries.into_par_iter().zip(&ls).map(|(query, l)| {
             let tid = rayon::current_thread_index().unwrap();
 
-            // abheet: takes extra modulus argument from the context.
+            // abc: takes extra modulus argument from the context.
             let mut out = vec![
                 RLWECiphertext::allocate(
                     self.ctx.poly_size, self.ctx.modulus);
@@ -588,7 +588,7 @@ impl Server {
 
         let sumed_tmps = tmps.reduce(
             || vec![
-                // abheet: takes extra modulus argument from the context.
+                // abc: takes extra modulus argument from the context.
                 RLWECiphertext::allocate(self.ctx.poly_size, self.ctx.modulus);
                 cols
             ],
@@ -603,7 +603,7 @@ impl Server {
         let sumed_ls = ls.into_par_iter().reduce(
             || {
                 vec![
-                    // abheet: takes extra modulus argument from the context.
+                    // abc: takes extra modulus argument from the context.
                     RGSWCiphertext::allocate(
                         self.ctx.poly_size,
                         self.ctx.base_log,
@@ -628,7 +628,7 @@ impl Server {
             .for_each(|j| {
                 let tid = rayon::current_thread_index().unwrap();
 
-                // abheet: takes extra modulus argument from the context.
+                // abc: takes extra modulus argument from the context.
                 let mut new_data = RLWECiphertext::allocate(self.ctx.poly_size, 
                     self.ctx.modulus);
 
@@ -726,7 +726,7 @@ impl Server {
         result
     }
 
-    // apurba — packing via sample extraction + LWE-to-RLWE keyswitch.
+    // apd — packing via sample extraction + LWE-to-RLWE keyswitch.
     // For each rot_stage1_cts[k], extract m_k[0] as LWE, switch back to RLWE,
     // shift to position k via X^k, and sum 
     // Output: RLWE encryption of (m_0[0], m_1[0], ..., m_{N-1}[0]).
@@ -827,7 +827,7 @@ pub fn setup_random_oram(
 }
 
 /*
-// apurba
+// apd
 // Setup the ORAM client and server for experimentation.
 pub fn setup_random_oram(rows: usize, cols: usize, params: TFHEParameters,) -> (Client, Server, Vec<u64>) {
 
@@ -863,7 +863,7 @@ fn correct_consistency(
     let v1s: Vec<RLWECiphertext> = positions
         .iter()
         .map(|(r, c)| {
-            // abheet: takes extra modulus argument from the context.
+            // abc: takes extra modulus argument from the context.
             let mut tmp = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
             let mut out = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
             rw_flags[*r].external_product_with_buf(
@@ -889,7 +889,7 @@ fn correct_consistency(
     // compute the remaining terms
     // (b_j * c_i1 * v_i1) + (b_j * c_i2 * v_i2) + (b_j * c_i3 * v_i3) + ...
     let second_terms = positions.iter().skip(1).map(|(r, c)| {
-        // abheet: takes extra modulus argument from the context.
+        // abc: takes extra modulus argument from the context.
         let mut tmp = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
         let mut out = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
         rw_flags[*r].external_product_with_buf(
@@ -914,7 +914,7 @@ fn correct_consistency(
     second_term
 }
 
-// NOTE(abheet): tests have not been migrated yet, DO NOT RUN the tests.
+// NOTE(abc): tests have not been migrated yet, DO NOT RUN the tests.
 #[cfg(test)]
 mod test {
     use super::*;

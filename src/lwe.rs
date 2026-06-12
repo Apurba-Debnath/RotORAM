@@ -78,7 +78,7 @@ impl LWECiphertext {
     }
     */
 
-    // NOTE(abheet): replace `allocate` with this `new` function, it takes a
+    // NOTE(abc): replace `allocate` with this `new` function, it takes a
     // custom modulus as another argument.
     pub fn new(size: LweSize, ciphertext_modulus: CiphertextModulus<Scalar>) -> Self {
         Self(LweCiphertext::new(Scalar::zero(), size, ciphertext_modulus))
@@ -89,7 +89,7 @@ impl LWECiphertext {
         self.0.lwe_size()
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     pub fn get_body(&self) -> LweBodyRef<'_, Scalar> {
         self.0.get_body()
     }
@@ -102,18 +102,18 @@ impl LWECiphertext {
         self.0.get_mut_mask()
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     pub fn get_mut_body(&mut self) -> LweBodyRefMut<'_, Scalar> {
         self.0.get_mut_body()
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     pub fn clear(&mut self) {
         // self.0.as_mut_tensor().fill_with(Scalar::zero);
         self.0.as_mut().fill_with(Scalar::zero);
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     pub fn fill_with_sample_extract(&mut self, c: &RLWECiphertext, n_th: MonomialDegree) {
         // self.0.fill_with_glwe_sample_extraction(&c.0, n_th);
         extract_lwe_sample_from_glwe_ciphertext(
@@ -123,7 +123,7 @@ impl LWECiphertext {
         );
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     pub fn fill_with_const_sample_extract(&mut self, c: &RLWECiphertext) {
         // self.0
         //     .fill_with_glwe_sample_extraction(&c.0, MonomialDegree(0));
@@ -136,7 +136,7 @@ impl LWECiphertext {
     }
 
     /*
-    // NOTE(abheet): no tensors are to be used, there are other ways to
+    // NOTE(abc): no tensors are to be used, there are other ways to
     // implement these functions if needed.
     //
     pub fn fill_with_tensor<C>(&mut self, t: &Tensor<C>)
@@ -154,13 +154,13 @@ impl LWECiphertext {
 
 #[derive(Debug, Clone)]
 /// An LWE secret key.
-// NOTE(abheet): The BinaryKeyKind is one of the kinds that could be specified
+// NOTE(abc): The BinaryKeyKind is one of the kinds that could be specified
 // by the user in a generic case. In this case we are hardcoding the rest of the
 // functions to work with binary key kind only.
 pub struct LWESecretKey(pub(crate) LweSecretKey</* BinaryKeyKind, */ Vec<Scalar>>);
 
 impl LWESecretKey {
-    // TODO(abheet): this function has been replaced with generate_new_binary.
+    // TODO(abc): this function has been replaced with generate_new_binary.
     //
     // /// Generate a secret key where the coefficients are binary.
     // pub fn generate_binary(
@@ -178,7 +178,7 @@ impl LWESecretKey {
         Self(LweSecretKey::generate_new_binary(lwe_dimension, generator))
     }
 
-    // NOTE(abheet): replaced with `encrypt_lwe_binary`,
+    // NOTE(abc): replaced with `encrypt_lwe_binary`,
     //
     // pub fn encrypt_lwe(
     //     &self,
@@ -197,7 +197,7 @@ impl LWESecretKey {
         output: &mut LWECiphertext,
         pt: &Plaintext<Scalar>,
         // noise_parameters: impl DispersionParameter,
-        noise_distribution: UniformBinary, // TODO(abheet): is this sound?
+        noise_distribution: UniformBinary, // TODO(abc): is this sound?
         generator: &mut EncryptionRandomGenerator<SoftwareRandomGenerator>,
     ) {
         /*
@@ -207,7 +207,7 @@ impl LWESecretKey {
         encrypt_lwe_ciphertext(&self.0, &mut output.0, *pt, noise_distribution, generator);
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     pub fn encode_encrypt_lwe(
         &self,
         output: &mut LWECiphertext,
@@ -218,11 +218,11 @@ impl LWESecretKey {
         ctx.codec.encode(&mut encoded_pt.0);
         // self.encrypt_lwe(output, &encoded_pt, ctx.std, &mut ctx.encryption_generator);
 
-        // TODO(abheet): is this correct?
+        // TODO(abc): is this correct?
         self.encrypt_lwe_binary(output, &encoded_pt, UniformBinary, &mut ctx.encryption_generator);
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     pub fn decrypt_lwe(&self, output: &mut Plaintext<Scalar>, ct: &LWECiphertext) {
         // self.0.decrypt_lwe(output, &ct.0);
         *output = decrypt_lwe_ciphertext(
@@ -240,25 +240,25 @@ impl LWESecretKey {
         ctx.codec.decode(&mut pt.0);
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     pub fn to_rlwe_sk(&self) -> RLWESecretKey {
-        // TODO(abheet): is this correct?
+        // TODO(abc): is this correct?
         let mut sk = RLWESecretKey::zero(PolynomialSize(self.0.as_ref().len()));
         sk.fill_with_slice(self.0.as_ref());
         sk
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     pub fn key_size(&self) -> LweDimension {
         // self.0.key_size()
         
-        // TODO(abheet): is length of the inner container same as key
+        // TODO(abc): is length of the inner container same as key
         // size?
         LweDimension(self.0.as_ref().len())
     }
 }
 
-// NOTE(abheet): Will be done later as needed!
+// NOTE(abc): Will be done later as needed!
 /*
 #[derive(Debug, Clone)]
 /// An LWE to RLWE key switching key.
@@ -293,7 +293,7 @@ impl LWEtoRLWEKeyswitchKey {
 }
 */
 
-// apurba - working
+// apd - working
 #[derive(Clone)]
 /// LWE -> RLWE packing keyswitch key (tfhe-native).
 pub struct LWEtoRLWEKeyswitchKey {
@@ -385,7 +385,7 @@ pub fn conv_lwe_to_rlwe(
 }
 */
 
-// apurba - working
+// apd - working
 pub fn conv_lwe_to_rlwe(
     ksks: &LWEtoRLWEKeyswitchKey,
     lwe: &LWECiphertext,
@@ -400,7 +400,7 @@ pub fn conv_lwe_to_rlwe(
     out
 }
 
-// NOTE(abheet): tests have not been migrated yet, DO NOT RUN the tests.
+// NOTE(abc): tests have not been migrated yet, DO NOT RUN the tests.
 #[cfg(test)]
 mod test {
     use concrete_core::prelude::PolynomialSize;

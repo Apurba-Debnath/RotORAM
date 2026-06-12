@@ -22,7 +22,7 @@ use tfhe::{
 use std::fs::File;
 
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 //
 pub(crate) fn mul_const(poly: &mut [Scalar], c: Scalar) {
     for coeff in poly.iter_mut() {
@@ -35,7 +35,7 @@ pub const fn log2(input: usize) -> usize {
     core::mem::size_of::<usize>() * 8 - (input.leading_zeros() as usize) - 1
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 //
 /// Evaluate f(x) on x^k, where k is odd
 pub(crate) fn eval_x_k<C>(poly: &Polynomial<C>, k: usize) -> Polynomial<Vec<Scalar>>
@@ -47,7 +47,7 @@ where
     out
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 //
 /// Evaluate f(x) on x^k, where k is odd
 pub(crate) fn eval_x_k_in_memory<C>(
@@ -107,7 +107,7 @@ pub fn parse_csv(path: &std::path::Path) -> Vec<Vec<usize>> {
     x_test
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 //
 pub fn pt_to_lossy_u64(pt: &PlaintextList<Vec<Scalar>>) -> u64 {
     let mut out = 0u64;

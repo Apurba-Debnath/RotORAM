@@ -69,7 +69,7 @@ use tfhe_csprng::{generators::SoftwareRandomGenerator, seeders::Seed};
 use dyn_stack::PodBuffer;
 use rand::Rng;
 
-// NOTE(abheet): modified! major modification.
+// NOTE(abc): modified! major modification.
 pub struct FftBuffer {
     // pub(crate) fft: Fft,
     // pub(crate) mem: GlobalMemBuffer,
@@ -78,7 +78,7 @@ pub struct FftBuffer {
 }
 
 impl FftBuffer {
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     pub fn new(poly_size: PolynomialSize) -> Self {
         /*
         let glwe_size = GlweSize(2);
@@ -115,7 +115,7 @@ pub struct Context {
     pub negs_level_count: DecompositionLevelCount,
     pub codec: Codec,
     
-    // abheet: new field added!
+    // abc: new field added!
     pub modulus: CiphertextModulus<Scalar>,
 }
 
@@ -201,7 +201,7 @@ impl Context {
             negs_level_count,
             codec,
 
-            // abheet
+            // abc
             modulus: CiphertextModulus::new(tfhe_params.modulus),
         }
     }
@@ -231,7 +231,7 @@ impl Context {
         ptxt
     }
 
-    // NOTE(abheet): modified! by default it uses native modulus.
+    // NOTE(abc): modified! by default it uses native modulus.
     /// Generate a plaintext list where the coefficients sampled from the plaintext space
     /// defined by the codec.
     pub fn gen_pt(&mut self) -> PlaintextList<Vec<Scalar>> {
@@ -258,7 +258,7 @@ impl Context {
     }
 
     /* 
-    // TODO(abheet): Unused!
+    // TODO(abc): Unused!
     /// Generate a plaintext that has one at index `i` and zero otherwise.
     pub fn gen_demuxed_pt(&mut self, i: usize) -> PlaintextList<Vec<Scalar>> {
         let mut ptxt = PlaintextList::allocate(Scalar::zero(), self.plaintext_count());
@@ -270,7 +270,7 @@ impl Context {
     }
     */
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     //
     /// Generate a ternay plaintext.
     pub fn gen_ternary_ptxt(&mut self) -> PlaintextList<Vec<Scalar>> {
@@ -286,7 +286,7 @@ impl Context {
         ptxt
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     //
     /// Generate a unit plaintext list (all coefficients are 0 except the constant term is 1).
     pub fn gen_unit_pt(&self) -> PlaintextList<Vec<Scalar>> {
@@ -298,7 +298,7 @@ impl Context {
             .get_mut_coefficient() = Scalar::one();
         */
 
-        // TODO(abheet): is it correct?
+        // TODO(abc): is it correct?
         ptxt.as_mut()[0] = Scalar::one();
         ptxt
     }
@@ -323,7 +323,7 @@ impl Context {
         RLWESecretKey::generate_binary(self.poly_size, &mut self.secret_generator)
     }
 
-    // NOTE(abheet): add if needed!
+    // NOTE(abc): add if needed!
     /*
     /// Generate a LWE secret key.
     pub fn gen_lwe_sk(&mut self) -> LWESecretKey {

@@ -11,6 +11,7 @@ use tfhe::{
     core_crypto::entities::polynomial::Polynomial,
     core_crypto::prelude::ContainerMut,
 };
+// use tfhe::core_crypto::commons::ciphertext_modulus::CiphertextModulus;
 
 use crate::{num_types::Scalar, utils::log2};
 
@@ -18,6 +19,7 @@ pub struct Codec {
     decomposer: SignedDecomposer<Scalar>,
     delta: Scalar,
 }
+
 
 impl Codec {
     pub fn new(t: Scalar) -> Self {
@@ -84,7 +86,7 @@ impl Codec {
         }
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     //
     /// Encode a polynomial.
     pub fn poly_encode<C>(&self, xs: &mut Polynomial<C>)
@@ -97,7 +99,7 @@ impl Codec {
         }
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     //
     pub fn poly_decode<C>(&self, xs: &mut Polynomial<C>)
     where
@@ -108,7 +110,7 @@ impl Codec {
         }
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     //
     /// Encode a ternary polynomial.
     pub fn poly_ternary_encode<C>(xs: &mut Polynomial<C>)
@@ -120,7 +122,7 @@ impl Codec {
         }
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     //
     pub fn poly_ternary_decode<C>(xs: &mut Polynomial<C>)
     where
@@ -132,7 +134,7 @@ impl Codec {
     }
 }
 
-// NOTE(abheet): tests have not been migrated yet, DO NOT RUN the tests.
+// NOTE(abc): tests have not been migrated yet, DO NOT RUN the tests.
 #[cfg(test)]
 mod test {
     use super::*;

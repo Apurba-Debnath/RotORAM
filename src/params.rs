@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+pub const MASK_SEED: u64 = 100;
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TFHEParameters {
     pub standard_deviation: f64,
@@ -13,7 +15,7 @@ pub struct TFHEParameters {
     pub plaintext_modulus: u64,
     pub secure_seed: bool,
 
-    // abheet: new field added!
+    // abc: new field added!
     pub modulus: u128,
 }
 
@@ -23,15 +25,15 @@ impl Default for TFHEParameters {
             standard_deviation: -55.0,
             polynomial_size: 2048,
             base_log: 5,
-            level_count: 6,
+            level_count: 9, // level_count = 6 results in PIR data mismatch due to noise
             key_switch_base_log: 5,
-            key_switch_level_count: 9,
+            key_switch_level_count: 11,
             negs_base_log: 5,
-            negs_level_count: 9,
+            negs_level_count: 11,
             plaintext_modulus: 1 << 8,
             secure_seed: true,
 
-            // abheet: new field added in default parameters, it defaults to 
+            // abc: new field added in default parameters, it defaults to 
             // the 64 bit native modulus.
             // modulus: 2u64.pow(64) as u128,
             modulus: 1u128 << 64

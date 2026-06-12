@@ -6,6 +6,7 @@ use crate::{
     rlwe::{compute_noise, RLWECiphertext, RLWEKeyswitchKey, RLWESecretKey},
     utils::mul_const,
 };
+use aligned_vec::{ABox, ConstAlign};
 
 /*
 use concrete_core::{
@@ -46,7 +47,7 @@ use tfhe:: {
 
 use dyn_stack::{PodStack};
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 // use GgswCiphertext instead of old StandardGgswCiphertext
 #[derive(Debug, Clone)]
 /// An RGSW ciphertext.
@@ -54,13 +55,13 @@ use dyn_stack::{PodStack};
 pub struct RGSWCiphertext(pub(crate) GgswCiphertext<ScalarContainer>);
 
 impl RGSWCiphertext {
-    // NOTE(abheet): modified! takes an extra modulus argument.
+    // NOTE(abc): modified! takes an extra modulus argument.
     pub fn allocate(
         poly_size: PolynomialSize,
         decomp_base_log: DecompositionBaseLog,
         decomp_level: DecompositionLevelCount,
 
-        // abheet: extra argument added!
+        // abc: extra argument added!
         modulus: CiphertextModulus<Scalar>,
     ) -> Self {
         // TODO consider using Fourier version
@@ -90,17 +91,25 @@ impl RGSWCiphertext {
         self.0.as_glwe_list().glwe_ciphertext_count()
     }
 
-    // NOTE(abheet): modified!
+    pub fn to_fourier(&self, buf: &mut FftBuffer) -> Fourier128GgswCiphertext<ABox<[f64], ConstAlign<128>>> {
+        let mut t = Fourier128GgswCiphertext::new(
+            GlweSize(2), self.polynomial_size(),
+            self.decomposition_base_log(), self.decomposition_level_count());
+        t.as_mut_view().fill_with_forward_fourier(&self.0.as_view(), buf.fft.as_view());
+        t
+    }
+
+    // NOTE(abc): modified!
     pub fn update_with_add(&mut self, other: &RGSWCiphertext) {
         // self.0
         //     .as_mut_tensor()
         //     .update_with_wrapping_add(other.0.as_tensor())
 
-        // TODO(abheet): use custom modulus version.
+        // TODO(abc): use custom modulus version.
         slice_wrapping_add_assign(&mut self.0.as_mut(), other.0.as_ref());
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     pub fn external_product_with_buf_glwe(
         &self,
         out: &mut GlweCiphertext<&mut [Scalar]>,
@@ -151,7 +160,7 @@ impl RGSWCiphertext {
         self.cmux_with_buf(out, ct0, ct1, &mut buf);
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     pub fn cmux_with_buf(
         &self,
         out: &mut RLWECiphertext,
@@ -207,7 +216,7 @@ impl RGSWCiphertext {
         self.get_nth_row(self.decomposition_level_count().0 * 2 - 1)
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     pub fn get_nth_row(&self, n: usize) -> RLWECiphertext {
         let mut glwe_ct = GlweCiphertext::new(
             Scalar::zero(),
@@ -226,7 +235,7 @@ impl RGSWCiphertext {
         );
         */
 
-        // NOTE(abheet): super hacky!, not sure if it is right.
+        // NOTE(abc): super hacky!, not sure if it is right.
         let size = glwe_ct.as_ref().len();
         glwe_ct.as_mut().copy_from_slice(
             &self.0.as_glwe_list().as_ref()[n*size..n*size + size]
@@ -234,7 +243,7 @@ impl RGSWCiphertext {
         RLWECiphertext(glwe_ct)
     }
 
-    // NOTE(abheet): will be added as needed.
+    // NOTE(abc): will be added as needed.
     //
     /*
     /// Convert the RLWE key switching key to a RGSW ciphertext.
@@ -287,6 +296,17 @@ impl RGSWCiphertext {
     }
 }
 
+// reuse a pre-transformed RGSW — skips the per-call forward FFT
+pub fn external_product_fourier(
+    out: &mut RLWECiphertext, fourier: &Fourier128GgswCiphertext<ABox<[f64], ConstAlign<128>>>,
+    d: &RLWECiphertext, buf: &mut FftBuffer,
+) {
+    let mut stack = PodStack::new(&mut buf.mem);
+    add_external_product_assign(
+        &mut out.0.as_mut_view(), &fourier.as_view(), &d.0.as_view(),
+        buf.fft.as_view(), &mut stack);
+}
+
 /// Compute the average noise in the RGSW ciphertext
 /// by computing the noise on the RLWE rows and taking the average.
 pub fn compute_noise_rgsw1(sk: &RLWESecretKey, ct: &RGSWCiphertext, ctx: &Context) -> f64 {
@@ -301,7 +321,7 @@ pub fn compute_noise_rgsw1(sk: &RLWESecretKey, ct: &RGSWCiphertext, ctx: &Contex
     total_noise / ctx.level_count.0 as f64
 }
 
-// NOTE(abheet): tests have not been migrated yet, DO NOT RUN the tests.
+// NOTE(abc): tests have not been migrated yet, DO NOT RUN the tests.
 #[cfg(test)]
 mod test {
     use super::*;

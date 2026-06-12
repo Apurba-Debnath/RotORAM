@@ -74,7 +74,7 @@ pub struct Cli {
     #[clap(long, default_value_t = TFHEParameters::default().plaintext_modulus)]
     pub plaintext_modulus: u64,
 
-    // apurba
+    // apd
     #[clap(long, default_value_t = TFHEParameters::default().modulus)]
     pub modulus: u128,
 

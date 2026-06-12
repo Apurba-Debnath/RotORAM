@@ -345,7 +345,7 @@ pub fn trunc_tree(root: &Option<Node>) -> Option<Node> {
     }
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 //
 /// Perform the comparison operation between (RLWE) encrypted features and the flattened plaintext decision tree
 /// and then output an iterator of (RGSW) encrypted choice bits.
@@ -360,7 +360,7 @@ pub fn compare_expand<'a>(
         let cts = client_cts[node.feature]
             .iter()
             .map(|c| {
-                // abheet: takes extra modulus argument from the context.
+                // abc: takes extra modulus argument from the context.
                 let mut ct = RLWECiphertext::allocate(ctx.poly_size,
                     ctx.modulus);
                 ct.fill_with_copy(c);
@@ -397,16 +397,16 @@ impl EncNode {
         Self::Internal(Box::new(out))
     }
 
-    // NOTE(abheet): modified!
+    // NOTE(abc): modified!
     /// Evaluate the tree.
     pub fn eval(&self, ctx: &Context, buf: &mut FftBuffer) -> Vec<RLWECiphertext> {
         let max_leaf_bits = ((self.max_leaf() + 1) as f64).log2().ceil() as usize;
         let mut out = vec![
-            // abheet: takes extra modulus argument from the context.
+            // abc: takes extra modulus argument from the context.
             RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
             max_leaf_bits
         ];
-        // abheet: takes extra modulus argument from the context.
+        // abc: takes extra modulus argument from the context.
         let mut c = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
         c.get_mut_body().as_mut()[0] = Scalar::one();
         ctx.codec
@@ -487,7 +487,7 @@ fn new_enc_node(
     }
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 fn eval_enc_node(
     out: &mut Vec<RLWECiphertext>,
     node: &EncNode,
@@ -504,7 +504,7 @@ fn eval_enc_node(
             }
         }
         EncNode::Internal(node) => {
-            // abheet: takes extra modulus argument from the context.
+            // abc: takes extra modulus argument from the context.
             let mut left = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
             node.ct.external_product_with_buf(&mut left, &b, buf);
             let mut right = b;
@@ -534,7 +534,7 @@ pub fn demux_with(
     demux_rec(0, b, bits, ctx, buf)
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 /// Demultiplex a length n vector of RGSW ciphertexts into
 /// a unit vector of length 2^n.
 pub fn demux(
@@ -543,7 +543,7 @@ pub fn demux(
     buf: &mut FftBuffer,
 ) -> Vec<RLWECiphertext> {
     // NOTE: no need to encrypt here since the "server" generates this ciphertext
-    // abheet: takes extra modulus argument from the context.
+    // abc: takes extra modulus argument from the context.
     let mut c = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
     c.get_mut_body().as_mut()[0] = Scalar::one();
     ctx.codec
@@ -552,7 +552,7 @@ pub fn demux(
     demux_with(c, bits, ctx, buf)
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 fn demux_rec(
     level: usize,
     b: RLWECiphertext,
@@ -561,7 +561,7 @@ fn demux_rec(
     buf: &mut FftBuffer,
 ) -> Vec<RLWECiphertext> {
     assert!(level < bits.len());
-    // abheet: takes extra modulus argument from the context.
+    // abc: takes extra modulus argument from the context.
     let mut left = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
     bits[level].external_product_with_buf(&mut left, &b, buf);
     let mut right = b;
@@ -579,7 +579,7 @@ fn demux_rec(
     }
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 /// Every feature v is encrypted as RLWE(1/(B^j n) X^v) for j in 1...\ell
 pub fn encrypt_feature_vector(
     sk: &RLWESecretKey,
@@ -602,16 +602,16 @@ pub fn encrypt_feature_vector(
             //     .get_mut_monomial(MonomialDegree(*v))
             //     .get_mut_coefficient() = Scalar::one() << shift;
 
-            // TODO(abheet): is this correct?
+            // TODO(abc): is this correct?
             pt.as_mut_polynomial().as_mut()[*v] = Scalar::one() << shift;
 
-            // abheet: takes extra modulus argument from the context.
+            // abc: takes extra modulus argument from the context.
             let mut ct = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
 
             // sk.encrypt_rlwe_binary(&mut ct, &pt, ctx.std, 
             //     &mut ctx.encryption_generator);
 
-            // TODO(abheet): should it be binary?
+            // TODO(abc): should it be binary?
             sk.encrypt_rlwe_binary(&mut ct, &pt, UniformBinary, 
                 &mut ctx.encryption_generator);
 
@@ -672,7 +672,7 @@ impl Display for SimulationResult {
     }
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 fn decrypt_and_recompose(sk: &RLWESecretKey, cts: &Vec<RLWECiphertext>, ctx: &Context) -> Scalar {
     let mut bv: BitVec<Scalar, Lsb0> = BitVec::new();
     let mut pt = PlaintextList::new(Scalar::zero(), ctx.plaintext_count());
@@ -750,7 +750,7 @@ pub fn simulate(
     )
 }
 
-// NOTE(abheet): modified!
+// NOTE(abc): modified!
 //
 /// Convert `i` to a bit vector and pad it to length `n`,
 /// and then encrypt it into RGSW ciphertexts.
@@ -779,7 +779,7 @@ pub fn bit_decomposed_rgsw(
     a
 }
 
-// NOTE(abheet): tests have not been migrated yet, DO NOT RUN the tests.
+// NOTE(abc): tests have not been migrated yet, DO NOT RUN the tests.
 #[cfg(test)]
 mod test {
     use concrete_core::commons::crypto::encoding::Plaintext;

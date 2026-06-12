@@ -6,14 +6,15 @@ use panacea::{
     cli::Cli, 
     naive_hash::NaiveHash, 
     num_types::Scalar, 
-    oram::{setup_random_oram, Client, Server}, 
-    params::{ORAMParameters, ServerParams, TFHEParameters}, 
-    rlwe::{compute_noise_encoded, RLWECiphertext},
+    oram::{setup_random_oram_row_retrieval, Client, Server, PackOfflineData, gen_fixed_mask, negacyclic_mul}, 
+    params::{ORAMParameters, ServerParams, TFHEParameters, MASK_SEED}, 
+    rlwe::{compute_noise_encoded, RLWECiphertext, gen_all_subs_ksk, gen_all_subs_ksk_fourier, RLWEKeyswitchKey},
     rgsw::RGSWCiphertext,
     utils::log2
 };
-use std::{fs::File, io::BufReader, time::Instant};
+use std::{fs::File, io::BufReader, time::Instant, collections::HashMap};
 use panacea::lwe::{LWESecretKey, LWEtoRLWEKeyswitchKey};
+use tfhe::core_crypto::commons::math::random::{UniformBinary, UniformTernary};
 
 fn single_query(item_count: usize, iterations: usize, tfhe_params: TFHEParameters, dryrun: bool) {
     assert!(iterations > 0);
@@ -21,225 +22,109 @@ fn single_query(item_count: usize, iterations: usize, tfhe_params: TFHEParameter
     if !dryrun {
 
         // Useful prints:
-        // apurba
-        println!("\nUSEFUL PRINTS - APURBA");
+        // apd
+        println!("\nUSEFUL PRINTS - abc");
         println!("polynomial_size: {}", tfhe_params.polynomial_size);
         println!("plaintext_modulus: {}", tfhe_params.plaintext_modulus);
         println!("poly_size_bit_length: {}", log2(tfhe_params.polynomial_size));
 
-        //apurba
-        let lsb_bits_rot = log2(tfhe_params.polynomial_size);
-        let msb_bits_rot = log2(item_count) - lsb_bits_rot;
-
         // println!("\n\nMod value q:{:?}",Scalar::BITS);
         let setup_instant = Instant::now();
-        let (mut client, mut server, pln_db) =
-            setup_random_oram(1, item_count, /* &NaiveHash, */ tfhe_params.clone());
+        // let (mut client, mut server, pln_db) = setup_random_oram(1, item_count, /* &NaiveHash, */ tfhe_params.clone());
+        let (mut client, mut server, mut db) = setup_random_oram_row_retrieval(1, item_count, tfhe_params.clone());
 
         let setup_duration = setup_instant.elapsed().as_secs_f64();
-        println!("\nSetup and database creation time:{} sec.",setup_duration);
+        println!("\nSetup and database creation time: {} sec.",setup_duration);
 
-        // Useful prints:
-        // apurba
-        println!("\nUSEFUL PRINTS - APURBA");
-        println!("client.ctx.poly_size.0: {}", client.ctx.poly_size.0);
-        println!("client.ctx.codec.pt_modulus(): {}", client.ctx.codec.pt_modulus());
-
-        //Generate a random database index from a total of item_count number of rows.
-        let db_rows: u64 = item_count as u64;
-
-        // Generate a random index to fetch data from
-        
-        let idx:usize = rand::thread_rng().gen_range(0..item_count);
-        // let idx = 2048; // msb index = 1, lsb index = 0
-        // let idx = 2129; // msb index = 1, lsb index = 81
-        // let idx = 5; // msb index = 0, lsb index = 5
-        // let idx = 0; // msb index = 0, lsb index = 0
-
-        println!("\nTotal database elements -------------->{:?}",db_rows);
-        println!("\nDatabase index to be read ------>{:?}",idx);
-
-        let query_lsb_value = idx & ((1 << lsb_bits_rot) - 1);
-        let query_msb_value = idx >> lsb_bits_rot;
-
-
-        // apurba
-        // Generate key switching keys needed for the RLWE to RGSW decomposition operation to carry out.
-        // let ksk_map =client.generate_ksk();
-
-        //Generate key switching keys needed for the RLWE to RGSW decomposition operation to carry out.
-        //This key is sent/available to server to convert RLWE ciphetext to RGSW ciphertext in fourier domain
-        
-        // let ksk_map =client.generate_ksk_fourier();
-        
         let n = client.ctx.poly_size.0;
-        // let k = query_lsb_value;
-        let rot_deg_stage1 = (n - query_lsb_value) % n; // % n fix - to fix degree 2048 out of range error
-        let rot_deg_stage2 = (n - query_msb_value) % n;
-
-        let mut rot_poly_pt_stage1 = client.ctx.gen_zero_pt();
-        // rot_poly_pt_stage1.as_mut_polynomial().get_mut_monomial(MonomialDegree(rot_deg_stage1)).set_coefficient(1);
-        rot_poly_pt_stage1.as_mut()[rot_deg_stage1] = 1;
-
-        let mut rot_poly_pt_stage2 = client.ctx.gen_zero_pt();
-        // rot_poly_pt_stage2.as_mut_polynomial().get_mut_monomial(MonomialDegree(rot_deg_stage2)).set_coefficient(1);
-        rot_poly_pt_stage2.as_mut()[rot_deg_stage2] = 1;
-       
-        let mut rot_poly_ct_rlwe_stage1 = RLWECiphertext::allocate(client.ctx.poly_size, client.ctx.modulus);
-        let mut rot_poly_ct_rgsw_stage2 = RGSWCiphertext::allocate(client.ctx.poly_size, client.ctx.base_log, client.ctx.level_count, client.ctx.modulus);
+        let m = item_count / n;
+        let log_t = client.ctx.codec.pt_modulus_bits();
+        let log_n = log2(n);
         
-        // sample-extract_lwe-rlwe-keyswitch 
-        // generation of LWE secret key (binary coefficients)
-        // let lwe_sk = LWESecretKey::generate_binary(client.ctx.lwe_dim(), &mut client.ctx.secret_generator,);
-        let lwe_sk = LWESecretKey::generate_new_binary(client.ctx.lwe_dim(), &mut client.ctx.secret_generator);
-        // deriving the RLWE SK from LWE SK - same coefficients, RLWE container
-        let rlwe_sk = lwe_sk.to_rlwe_sk();
-        client.sk = rlwe_sk;
-        // LWE-to-RLWE keyswitch key
-        let mut lwe_to_rlwe_ksk = LWEtoRLWEKeyswitchKey::allocate(&client.ctx);
-        lwe_to_rlwe_ksk.fill_with_keyswitching_key(&lwe_sk, &mut client.ctx);
+        let subs_ksk_map = gen_all_subs_ksk(&client.sk, &mut client.ctx); // apd - TODO: fourier version to be used?
+        let row_idx: usize = rand::thread_rng().gen_range(0..m);
+        println!("\nRow index in original database to fetch (full row retrieval): {row_idx}");
 
-        /* // apurba - debug: conv_lwe_to_rlwe round-trip sanity check
-        {
-            use panacea::lwe::{LWECiphertext, conv_lwe_to_rlwe};
-            // known plaintext: constant term = 42
-            let mut pt = client.ctx.gen_zero_pt();
-            pt.as_mut()[0] = 42;
+        println!("\nTotal database elements -------------->{:?}", item_count);
         
-            let mut rlwe_in = RLWECiphertext::allocate(client.ctx.poly_size, client.ctx.modulus);
-            client.sk.encode_encrypt_rlwe_binary(&mut rlwe_in, &pt, &mut client.ctx);
+        // RGSW(X^{N - r*})
+        let rot_deg = (n - row_idx) % n;
+        let mut rot_pt = client.ctx.gen_zero_pt();
+        rot_pt.as_mut()[rot_deg] = 1;
+        let mut row_rgsw = RGSWCiphertext::allocate(client.ctx.poly_size, client.ctx.base_log, client.ctx.level_count, client.ctx.modulus);
+        client.sk.encrypt_rgsw(&mut row_rgsw, &rot_pt, &mut client.ctx);
+
+        let start_read_full_row_computation = Instant::now();
+        let result = server.read_full_row_rotpack_cdks(&row_rgsw, &subs_ksk_map);
+        println!("\nTime taken (online) - full row read: {} sec.", start_read_full_row_computation.elapsed().as_secs_f64()); 
+
+        let dec = client.decrypt_final_result(result);
+        // one rotation => whole row sign-flips iff row_idx != 0 (negacyclic X^N = -1)
+        let retrieved: Vec<u64> = (0..n).map(|j| {
+            let c = dec.as_ref()[j];
+            if row_idx != 0 
+                { c.wrapping_neg() % tfhe_params.plaintext_modulus }
+            else 
+                { c % tfhe_params.plaintext_modulus }
+        }).collect();
         
-            // sample-extract the constant coeff -> LWE under lwe_sk
-            let mut lwe_ct = LWECiphertext::new(client.ctx.lwe_size(), client.ctx.modulus);
-            lwe_ct.fill_with_const_sample_extract(&rlwe_in);
+        let expected: Vec<u64> = (0..n).map(|j| db[row_idx * n + j]).collect();
+
+        // --- Print first/last 5 coefficients ---
+        let print_coeffs = |label: &str, v: &Vec<u64>| {
+            let first5: Vec<(usize, u64)> = v.iter().enumerate().take(5).map(|(i,&x)| (i,x)).collect();
+            let last5:  Vec<(usize, u64)> = v.iter().enumerate().rev().take(5).rev().map(|(i,&x)| (i,x)).collect();
+            println!("{} | first 5: {:?}", label, first5);
+            println!("{} | last  5: {:?}", label, last5);
+        };
         
-            // switch back to RLWE under client.sk, decrypt
-            let rlwe_out = conv_lwe_to_rlwe(&lwe_to_rlwe_ksk, &lwe_ct, &client.ctx);
-            let mut dec = client.ctx.gen_zero_pt();
-            client.sk.decrypt_decode_rlwe(&mut dec, &rlwe_out, &mut client.ctx);
-            println!("---------------------------Debug----------------------------");
-            println!("conv round-trip: expected 42, got {}", dec.as_ref()[0]);
-            println!("---------------------------Debug----------------------------");
-        }
-        */
+        print_coeffs("expected: ", &expected);
+        print_coeffs("retrieved: ", &retrieved);
+        // ----------------------------------------
+
+        assert_eq!(expected, retrieved, "Full row ORAM READ incorrect");
+        println!("\n===== Full row ORAM READ correct! =====");
+
+        // ORAM write flow
+        let delta_scaled: Scalar = 1 << (Scalar::BITS as usize - log_t - log2(n)); // Δ/N, as in setup
+        let t = tfhe_params.plaintext_modulus;
         
-        /* // apurba - debug: differential RGSW test: encrypt_constant_rgsw vs encrypt_rgsw
-        {
-            use tfhe::core_crypto::entities::plaintext::Plaintext;
-            println!("---------------------------Debug----------------------------"); 
-            let expected: u64 = 7;
+        let lwe_rlwe_ksk = client.gen_lwe_to_rlwe_ksk();
         
-            // known input: RLWE(Δ·7)
-            let mut pt_in = client.ctx.gen_zero_pt();
-            pt_in.as_mut()[0] = expected;
-            let mut rlwe_in = RLWECiphertext::allocate(client.ctx.poly_size, client.ctx.modulus);
-            client.sk.encode_encrypt_rlwe_binary(&mut rlwe_in, &pt_in, &mut client.ctx);
+        // ---- WRITE ----
+        let new_row_data: Vec<u64> = (0..n)
+            .map(|_| rand::thread_rng().gen_range(0..client.ctx.codec.pt_modulus()))
+            .collect();
+        let (fwd_rgsw_query, rev_rgsw_query, ct_to_write) = client.gen_row_write_query(row_idx, &new_row_data, delta_scaled);
         
-            // sanity: the input itself must decrypt to 7
-            let mut chk = client.ctx.gen_zero_pt();
-            client.sk.decrypt_decode_rlwe(&mut chk, &rlwe_in, &mut client.ctx);
-            println!("[rgsw-test] input RLWE decrypts to {} (expected {})", chk.as_ref()[0], expected);
+        let start_write_full_row_computation = Instant::now();
+        server.write_full_row(&fwd_rgsw_query, &rev_rgsw_query, &ct_to_write, &lwe_rlwe_ksk);
+        println!("\nTime taken (online) - full row write: {} sec.", start_write_full_row_computation.elapsed().as_secs_f64());
         
-            // --- path A: tfhe's encrypt_constant_rgsw, message = constant 1 ---
-            let mut rgsw_tfhe = RGSWCiphertext::allocate(
-                client.ctx.poly_size, client.ctx.base_log, client.ctx.level_count, client.ctx.modulus,
-            );
-            client.sk.encrypt_constant_rgsw(&mut rgsw_tfhe, &Plaintext(1u64), &mut client.ctx);
+        for j in 0..n { db[row_idx * n + j] = new_row_data[j]; }     // mirror plaintext for the check
         
-            let mut out_tfhe = RLWECiphertext::allocate(client.ctx.poly_size, client.ctx.modulus);
-            rgsw_tfhe.external_product(&mut out_tfhe, &rlwe_in);
+        // ---- READ-AFTER-WRITE ----
+        let rot_deg = (n - row_idx) % n;
+        let mut rot_pt = client.ctx.gen_zero_pt();
+        rot_pt.as_mut()[rot_deg] = 1;
+        let mut row_rgsw = RGSWCiphertext::allocate(client.ctx.poly_size, client.ctx.base_log, client.ctx.level_count, client.ctx.modulus);
+        client.sk.encrypt_rgsw(&mut row_rgsw, &rot_pt, &mut client.ctx);
+        // let start_readback_full_row_computation = Instant::now(); 
+        let result = server.read_full_row_rotpack_cdks(&row_rgsw, &subs_ksk_map);
+        // println!("\nTime taken (online) - full row read-back: {} sec.", start_readback_full_row_computation.elapsed().as_secs_f64());
+        let dec = client.decrypt_final_result(result);
+        let read_back: Vec<u64> = (0..n).map(|j| {
+            let c = dec.as_ref()[j];
+            if row_idx != 0 { c.wrapping_neg() % t } else { c % t }
+        }).collect();
         
-            let mut dec_tfhe = client.ctx.gen_zero_pt();
-            client.sk.decrypt_decode_rlwe(&mut dec_tfhe, &out_tfhe, &mut client.ctx);
-            println!("[rgsw-test] encrypt_constant_rgsw(1) (X) RLWE(7) -> {} (expected {})",
-                     dec_tfhe.as_ref()[0], expected);
+        assert_eq!(new_row_data, read_back, "Full row ORAM WRITE incorrect");
         
-            // --- path B: hand-rolled encrypt_rgsw, message = monomial 1*X^0 ---
-            let mut pt_one = client.ctx.gen_zero_pt();
-            pt_one.as_mut()[0] = 1;
-            let mut rgsw_hand = RGSWCiphertext::allocate(
-                client.ctx.poly_size, client.ctx.base_log, client.ctx.level_count, client.ctx.modulus,
-            );
-            client.sk.encrypt_rgsw(&mut rgsw_hand, &pt_one, &mut client.ctx);
+        print_coeffs("new_row_data (written): ", &new_row_data);
+        print_coeffs("read_back: ", &read_back);
+        // ----------------------------------------
         
-            let mut out_hand = RLWECiphertext::allocate(client.ctx.poly_size, client.ctx.modulus);
-            rgsw_hand.external_product(&mut out_hand, &rlwe_in);
-        
-            let mut dec_hand = client.ctx.gen_zero_pt();
-            client.sk.decrypt_decode_rlwe(&mut dec_hand, &out_hand, &mut client.ctx);
-            println!("[rgsw-test] encrypt_rgsw(1*X^0)      (X) RLWE(7) -> {} (expected {})", dec_hand.as_ref()[0], expected);
-            println!("---------------------------Debug----------------------------");
-        }
-        */
-
-        let encode_encr_rot_poly = Instant::now();
-        // client.sk.encode_encrypt_rlwe(&mut rot_poly_ct_rlwe_stage1, &rot_poly_pt_stage1, &mut client.ctx);
-        client.sk.encode_encrypt_rlwe_binary(&mut rot_poly_ct_rlwe_stage1, &rot_poly_pt_stage1, &mut client.ctx);
-        
-        // let mut rot_poly_pt_stage2_encoded = rot_poly_pt_stage2.clone();
-        // client.ctx.codec.poly_encode(&mut rot_poly_pt_stage2_encoded.as_mut_polynomial());
-        // client.sk.encrypt_rgsw(&mut rot_poly_ct_rgsw_stage2, &rot_poly_pt_stage2_encoded, &mut client.ctx);
-
-        client.sk.encrypt_rgsw(&mut rot_poly_ct_rgsw_stage2, &rot_poly_pt_stage2, &mut client.ctx); // working
-        let encode_encr_rot_poly_duration = encode_encr_rot_poly.elapsed().as_secs_f64();    
-        println!("\nTime required for encode_encrypt of rotation polynomials:{} sec.", encode_encr_rot_poly_duration);
-
-
-        // apurba - ks_packing updates
-        // generate enc_sk = RLWE_s(s)
-        // let mut enc_sk = RLWECiphertext::allocate(client.ctx.poly_size);
-        // client.sk.encrypt_sk_as_rlwe(&mut enc_sk, &mut client.ctx);
-        
-        let db_copy=pln_db.clone();
-        // let ct_gsw1=ct_gsw.clone();
-        // println!("\n\nDatabase contains elements:{:?}",pts);
-        // let rotation_sk = client.ctx.gen_rlwe_sk();
-
-
-        println!("\nMain computation in the encrypted domain started");
-        let enc_data_comp = Instant::now();
-
-        // let result = server.rotation_and_cmux_computation(pln_db, query_rgsw_ct_cmux, rot_poly_ct_rlwe_stage1, lsb_bits_rot, msb_bits_cmux);
-        let result = server.multi_stage_rotation_computation_samp_ext_lwe_rlwe_ks(pln_db.clone(), rot_poly_ct_rlwe_stage1.clone(), rot_poly_ct_rgsw_stage2.clone(), lsb_bits_rot, msb_bits_rot, &lwe_to_rlwe_ksk);
-
-        // println!("Here is the computed result:{:?}", result);
-        let total_enc_index_comp_time = enc_data_comp.elapsed().as_secs_f64();   
-        println!("\nTotal time required for main computation to be carried out in the enc domain:{} sec.",total_enc_index_comp_time);
-
-
-        //Decrypt and check the result for correctness
-
-        // let mut dec1 = client.ctx.gen_zero_pt();
-        // rotation_sk.decrypt_decode_rlwe(&mut dec1, &result, &client.ctx);
-      
-        // decryption - degree 2048 out of range fix version
-        let dec1 = client.decrypt_final_result(result);
-        // let result_poly = dec1.as_polynomial();
-        let coeff0 = dec1.as_ref()[0];
-
-        // %n fix - to fix degree 2048 out of range error
-        // let retrieved_value = if ((query_lsb_value == 0) ^ (query_msb_value == 0)) {result_poly.coefficient_iter().nth(0).unwrap().wrapping_neg() % tfhe_params.plaintext_modulus} else {result_poly.coefficient_iter().nth(0).unwrap() % tfhe_params.plaintext_modulus};
-        let retrieved_value = if ((query_lsb_value==0) ^ (query_msb_value==0)) {coeff0.wrapping_neg() % tfhe_params.plaintext_modulus}
-                              else {coeff0 % tfhe_params.plaintext_modulus};
-
-
-        println!("\n\nPlaintext data in the mentioned database index:{:?}",db_copy[idx]);
-        println!("\nDecrypted query:{:?}", retrieved_value);
-
-        // for debug
-        // println!("\nresult_poly.coefficient_iter().nth(0).unwrap(): {:?}", result_poly.coefficient_iter().nth(0).unwrap());
-        // println!("\nresult_poly.coefficient_iter().nth(0): {:?}", result_poly.coefficient_iter().nth(0));
-
-        // println!("\nDecrypted query is:{:?}",dec1);
-        // println!("\nDecrypted query is:{:?}",dec1.plaintext_iter().nth(0));
-        // println!("\nEncrypted domain computation and obtained result is:{:?}",dec1.as_mut_polynomial().get_monomial(MonomialDegree(0)));// .as_polynomial().get_monomial(0));
-
-        // apurba
-        if (db_copy[idx] == retrieved_value) {
-            println!("\nPIR result correct!");
-        } else {
-            println!("\nPIR result wrong!");
-        }
+        println!("\n===== Full row ORAM WRITE correct! =====");
 
     } else {
         println!("Inside else statement");
@@ -248,12 +133,6 @@ fn single_query(item_count: usize, iterations: usize, tfhe_params: TFHEParameter
 }
 
 fn main() {
-    // Parameters from SEAL PIR: https://eprint.iacr.org/2017/1142.pdf
-    // n = 2^20
-    // k = 256
-    // b = 1.5k = 384
-    // w = 3
-    // every row (bucket) in the database has 3*n / b = 2^13 elements
     let cli = Cli::parse();
 
     // if we have a value passed to --params, all other params from cli are ignored
@@ -287,8 +166,6 @@ fn main() {
             },
         }],
     };
-    // println!(
-    //     "standard_deviation:\npolynomial_size::{} \nbase_log:{} \nlevel_count:{} \nkey_switch_base_log:{} \nkey_switch_level_count:{} \nnegs_base_log:{} \nnegs_level_count:{} \nplaintext_modulus:{} \nsecure_seed:{} \nmode:{} \nitem_count:{} \nquery_count:{} \nrows:{} \ncols:{} \nn:{} \nsetup_duration:{} \nserver_duration:{} \nresponse_duration:{} \nfinal_noise:{} \n");
     for params in input_params {
         println!("standard_deviation:{} \npolynomial_size:{} \nbase_log:{} \nlevel_count:{} \nkey_switch_base_log:{} \nkey_switch_level_count:{} 
         \nnegs_base_log:{} \nnegs_level_count:{} \nplaintext_modulus bits:{} \nsecure_seed:{}", 
@@ -316,5 +193,5 @@ fn main() {
         }
         println!("Done with match function");
     }
-    println!("Done with params");
+    println!("Done with params for-loop");
 }

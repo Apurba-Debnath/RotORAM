@@ -36,6 +36,7 @@ dyn-stack = "0.13.2"
 tfhe = "1.6.2"
 tfhe-fft = "0.10.1"
 tfhe-csprng = "0.9.1"
+aligned-vec = "0.6.4"
 # tfhe = { version = "1.6.1", path = "../tfhe-rs/tfhe" }
 # tfhe-fft = { version = "0.10.1", path = "../tfhe-rs/tfhe-fft" }
 # tfhe-csprng = { version = "0.9.0", path = "../tfhe-rs/tfhe-csprng" }

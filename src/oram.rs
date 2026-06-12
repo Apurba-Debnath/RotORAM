@@ -5,25 +5,50 @@ use crate::{
     decision_tree::{bit_decomposed_rgsw, demux_with},
     naive_hash::NaiveHash,
     num_types::{One, Scalar, Zero},
-    params::TFHEParameters,
-    lwe::{LWEtoRLWEKeyswitchKey, LWECiphertext, conv_lwe_to_rlwe},
-    rgsw::RGSWCiphertext,
-    rlwe::{decomposed_rlwe_to_rgsw, RLWECiphertext, RLWESecretKey},
+    params::{TFHEParameters, MASK_SEED},
+    lwe::{LWEtoRLWEKeyswitchKey, LWECiphertext, LWESecretKey, conv_lwe_to_rlwe},
+    rgsw::{RGSWCiphertext, external_product_fourier},
+    rlwe::{decomposed_rlwe_to_rgsw, RLWECiphertext, RLWESecretKey, RLWEKeyswitchKey, FourierRLWEKeyswitchKey},
     utils::pt_to_lossy_u64,
     utils::{transpose, log2},
 };
-use rand::Rng;
+use rand::{Rng, SeedableRng};
+use rand::rngs::StdRng;
 
 use tfhe::{
     core_crypto::entities::plaintext::Plaintext,
     core_crypto::entities::plaintext_list::PlaintextList,
+    core_crypto::commons::parameters::{LweSize, MonomialDegree},
+    core_crypto::commons::math::random::UniformBinary
 };
 
 use rayon::prelude::*;
 use std::{
     sync::{Arc, Mutex, RwLock},
     time::{Duration, Instant},
+    collections::HashMap,
 };
+
+/// Deterministic public mask, identical on client and server.
+pub fn gen_fixed_mask(seed: u64, n: usize) -> Vec<Scalar> {
+    let mut rng = StdRng::seed_from_u64(seed);
+    (0..n).map(|_| rng.gen::<Scalar>()).collect()
+}
+
+/// Exact negacyclic product in Z_q[X]/(X^N+1). O(N^2), used once per query.
+pub fn negacyclic_mul(a: &[Scalar], b: &[Scalar], n: usize) -> Vec<Scalar> {
+    let mut out = vec![Scalar::zero(); n];
+    for i in 0..n {
+        if a[i] == 0 { continue; }
+        for j in 0..n {
+            let k = i + j;
+            let prod = a[i].wrapping_mul(b[j]);
+            if k < n { out[k] = out[k].wrapping_add(prod); }
+            else     { out[k - n] = out[k - n].wrapping_sub(prod); } // X^N = -1
+        }
+    }
+    out
+}
 
 // ORAM client state.
 pub struct Client {
@@ -53,8 +78,25 @@ impl Client {
         self.sk.neg_gsw(&mut self.ctx)
     }
 
+    pub fn encrypt_database_transposed(&mut self, db: &[u64], delta_scaled: Scalar) -> Vec<RLWECiphertext> {
+        let n = self.ctx.poly_size.0;
+        let m = db.len() / n;                       // number of original rows
+        debug_assert!(m <= n, "full-row transpose mode requires item_count <= N^2");
+        let mut out = Vec::with_capacity(n);
+        for j in 0..n {                             // one transposed poly per column j
+            let mut pt = self.ctx.gen_zero_pt();
+            for k in 0..m {                         // coeff k = original row k, column j
+                pt.as_mut()[k] = delta_scaled.wrapping_mul(db[k * n + j]);
+            }
+            let mut ct = RLWECiphertext::allocate(self.ctx.poly_size, self.ctx.modulus);
+            self.sk.encrypt_rlwe_binary(&mut ct, &pt, UniformBinary, &mut self.ctx.encryption_generator);
+            out.push(ct);
+        }
+        out
+    }
+
     // Generate a dummy database for performance testing.
-    // pub fn gen_dummy_database(&mut self) -> (Vec<PlaintextList<Vec<Scalar>>>, Vec<Vec<RLWECiphertext>>) {
+    // pub fn gen_dummy_database(&mut self) -> (Vec<PlaintextList<Vec<Scalar>>>, Vec<Vec<RLWECiphertext>>) {}
     pub fn gen_dummy_database(&mut self) -> Vec<u64> {
         // TODO put NaiveHash in Client struct
         println!("\nCreating dummy database for performace testing");
@@ -63,23 +105,19 @@ impl Client {
         // println!("\nTotal data elements in the database is:{:?}",item_count);
         let mut db = vec![item_count];
 
-        //Define maximum value of database element
         let max_db_element:u64=self.ctx.codec.pt_modulus(); // 128;  //150500;
         println!("Plaintext mod:{:?}",max_db_element);
 
-        // Create a database vector
         let mut db: Vec<u64> = Vec::with_capacity(item_count);
 
         //create encrypted data vector
         // let mut enc_db: Vec<RLWECiphertext> = Vec::with_capacity(item_count);
 
-        // create random elements and inser it into the database
         let mut i=0;
-        while item_count>i {
+        while (item_count > i) {
             let data_item=rand::thread_rng().gen_range(0..max_db_element);
-            
             // let data_item = (i as u64) % 32;
-            // let data_item = (i as u64) % max_db_element;
+            // let data_item = ((i*2+3) as u64) % max_db_element;
 
             db.push(data_item);
             i+=1;            
@@ -90,17 +128,127 @@ impl Client {
     pub fn decrypt_final_result(& mut self, query:RLWECiphertext) -> PlaintextList<Vec<u64>> {
 
         let mut pt = self.ctx.gen_zero_pt();
-        // println!("\nHere is the value of query:{:?}",query);
         // self.sk.decrypt_rlwe(&mut pt, &query); 
-        //when encrypted with a mentioned encoding
         self.sk.decrypt_decode_rlwe(&mut pt, &query, &mut self.ctx);
         pt
     }
 
+/// One-time key so the server can move an extracted LWE coeff back to RLWE coeff 0.
+pub fn gen_lwe_to_rlwe_ksk(&mut self) -> LWEtoRLWEKeyswitchKey {
+    // RLWE secret key, viewed as the LWE key that sample-extraction produces.
+    let lwe_sk = LWESecretKey(self.sk.0.clone().into_lwe_secret_key());
+    let mut ksk = LWEtoRLWEKeyswitchKey::allocate(&self.ctx);
+    ksk.fill_with_keyswitching_key(&lwe_sk, &mut self.ctx);
+    ksk
+}
+
+/// Write query for row r*: (forward rot, reverse rot, sign-folded new row).
+pub fn gen_row_write_query(
+    &mut self,
+    row: usize,
+    new_row: &[u64],
+    delta_scaled: Scalar,
+) -> (RGSWCiphertext, RGSWCiphertext, RLWECiphertext) {
+    let n = self.ctx.poly_size.0;
+    let s_neg = row != 0;                       // s = -1 iff row != 0
+
+    // forward rotation X^{N - r*}  (same as read)
+    let fwd_deg = (n - row) % n;
+    let mut fwd_pt = self.ctx.gen_zero_pt();
+    fwd_pt.as_mut()[fwd_deg] = 1;
+    let mut fwd = RGSWCiphertext::allocate(
+        self.ctx.poly_size, self.ctx.base_log, self.ctx.level_count, self.ctx.modulus);
+    self.sk.encrypt_rgsw(&mut fwd, &fwd_pt, &mut self.ctx);
+
+    // reverse rotation = inverse monomial of X^{N-r*}: +X^0 if r*=0 else -X^{r*}
+    let mut rev_pt = self.ctx.gen_zero_pt();
+    if row == 0 { rev_pt.as_mut()[0] = 1; }
+    else        { rev_pt.as_mut()[row] = Scalar::MAX; }   // -1 mod q (q = 2^64)
+    let mut rev = RGSWCiphertext::allocate(
+        self.ctx.poly_size, self.ctx.base_log, self.ctx.level_count, self.ctx.modulus);
+    self.sk.encrypt_rgsw(&mut rev, &rev_pt, &mut self.ctx);
+
+    // packed new row at Δ_s, with sign s folded in: coeff j = s · Δ_s · new[j]
+    let mut pt = self.ctx.gen_zero_pt();
+    for j in 0..n {
+        let v = delta_scaled.wrapping_mul(new_row[j]);
+        pt.as_mut()[j] = if s_neg { v.wrapping_neg() } else { v };
+    }
+    let mut ct_new = RLWECiphertext::allocate(self.ctx.poly_size, self.ctx.modulus);
+    self.sk.encrypt_rlwe_binary(&mut ct_new, &pt, UniformBinary, &mut self.ctx.encryption_generator);
+
+    (fwd, rev, ct_new)
+}
+
+}
+
+// apd - CDKS packing updates
+/// Multiply an RLWE ciphertext by (± X^shift) in Z_q[X]/(X^N+1), exactly.
+/// This is a negacyclic rotation — no FFT, no rounding.
+fn rotate_poly(dst: &mut [Scalar], src: &[Scalar], shift: usize, negate: bool, n: usize) {
+    for i in 0..n {
+        let j = (i + shift) % n;
+        let crossed = ((i + shift) / n) % 2 == 1; // X^N = -1
+        let mut v = src[i];
+        if crossed ^ negate {
+            v = v.wrapping_neg();
+        }
+        dst[j] = v;
+    }
+}
+
+fn monomial_mul(ct: &RLWECiphertext, shift: usize, negate: bool, ctx: &Context) -> RLWECiphertext {
+    let n = ctx.poly_size.0;
+    let mut out = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
+    rotate_poly(out.get_mut_mask().as_mut(), ct.get_mask().as_ref(), shift, negate, n);
+    rotate_poly(out.get_mut_body().as_mut(), ct.get_body().as_ref(), shift, negate, n);
+    out
+}
+
+/// Recursive CDKS PackLWEs.
+/// Packs rlwe_cts[start_idx .. ] so that the constant coefficient of input k
+/// lands in coefficient k of the output, scaled by N. Non-constant input
+/// coefficients are annihilated. 
+fn pack_lwes_cdks(
+    ctx: &Context,
+    ell: usize,
+    start_idx: usize,
+    rlwe_cts: &[RLWECiphertext],
+    subs_ksk_map: &HashMap<usize, RLWEKeyswitchKey>,
+) -> RLWECiphertext {
+    if ell == 0 {
+        return rlwe_cts[start_idx].clone();
+    }
+    let n = ctx.poly_size.0;
+    let log_n = log2(n);
+    let step = 1 << (log_n - ell);
+
+    let mut ct_even = pack_lwes_cdks(ctx, ell - 1, start_idx, rlwe_cts, subs_ksk_map);
+    let ct_odd = pack_lwes_cdks(ctx, ell - 1, start_idx + step, rlwe_cts, subs_ksk_map);
+
+    // y = X^step, neg_y = -X^step
+    let y_times_ct_odd = monomial_mul(&ct_odd, step, false, ctx);
+    let neg_y_times_ct_odd = monomial_mul(&ct_odd, step, true,  ctx);
+
+    let mut ct_sum_1 = ct_even.clone();
+    ct_sum_1.update_with_add(&neg_y_times_ct_odd);  // ct_even - X^step·ct_odd
+    ct_even.update_with_add(&y_times_ct_odd);   // ct_even + X^step·ct_odd
+
+    let k = (1 << ell) + 1;
+    let ksk = subs_ksk_map.get(&k).expect("missing subs_ksk");
+    let mut ct_auto = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
+    ksk.subs(&mut ct_auto, &ct_sum_1);
+
+    ct_even.update_with_add(&ct_auto);
+    ct_even
+}
+
+pub struct PackOfflineData {
+    o: RLWECiphertext, // O = Pack(masks, 0), reusable across queries
 }
 
 pub struct Server {
-    data: Vec<u64>,
+    data_enc: Vec<RLWECiphertext>,
     neg_s: RGSWCiphertext,
     ctx: Context,
 }
@@ -108,12 +256,12 @@ pub struct Server {
 impl Server {
     /// Create a new server that stores ciphertexts `data`.
     pub fn new(
-        data: Vec<u64>,
+        data_enc: Vec<RLWECiphertext>,
         neg_s: RGSWCiphertext,
         params: TFHEParameters,
     ) -> Self {
         Self {
-            data: data,
+            data_enc,
                 // .into_iter()
                 // .map(|row| Arc::new(RwLock::new(row)))
                 // .collect(),
@@ -123,17 +271,17 @@ impl Server {
     }
 
     fn rows(&self) -> usize {
-        self.data.len()
+        self.data_enc.len()
     }
 
     fn cols(&self) -> usize {
         // self.data[0].clone().read().unwrap().len()
-        self.data.clone().len()
+        self.data_enc.clone().len()
     }
 
     // applying rotation on the packed ciphertext with RGSW ciphertext as rotation polynomial
-    pub fn rotation_stage2(
-        &mut self,
+    pub fn rlwe_ct_rotation(
+        &self,
         packed_ct: &RLWECiphertext,
         idx_rgsw_ct: &RGSWCiphertext,    // RGSW encryption of X^(N - msb_index)
     ) -> RLWECiphertext {
@@ -149,108 +297,156 @@ impl Server {
         result
     }
 
-    // apurba — packing via sample extraction + LWE-to-RLWE keyswitch.
-    // For each rot_stage1_cts[k], extract m_k[0] as LWE, switch back to RLWE,
-    // shift to position k via X^k, and sum 
-    // Output: RLWE encryption of (m_0[0], m_1[0], ..., m_{N-1}[0]).
-    pub fn pack_first_coeffs_lwe(
+    // apd - CDKS packing updates
+    pub fn pack_first_coeffs_cdks(
         &self,
-        rot_stage1_cts: &[RLWECiphertext],
-        lwe_to_rlwe_ksk: &LWEtoRLWEKeyswitchKey,
+        input_rlwe_cts: &[RLWECiphertext],
+        subs_ksk_map: &HashMap<usize, RLWEKeyswitchKey>,
     ) -> RLWECiphertext {
-        assert!(!rot_stage1_cts.is_empty(), "no stage-1 ciphertexts to pack");
         let n = self.ctx.poly_size.0;
-        assert!(
-            rot_stage1_cts.len() <= n,
-            "can pack at most poly_size constant terms; got {}",
-            rot_stage1_cts.len()
-        );
-    
-        let mut acc = RLWECiphertext::allocate(self.ctx.poly_size, self.ctx.modulus);
-    
-        for (k, ct) in rot_stage1_cts.iter().enumerate() {
-            // Sample-extract the constant term as an LWE ciphertext (encrypts m_k[0] · Δ)
-            let mut lwe_ct = LWECiphertext::new(self.ctx.lwe_size(), self.ctx.modulus);
-            lwe_ct.fill_with_const_sample_extract(ct);
-    
-            // LWE to RLWE: result decrypts to (m_k[0]·Δ, 0, ..., 0)
-            let mut rlwe_k = conv_lwe_to_rlwe(lwe_to_rlwe_ksk, &lwe_ct, &self.ctx);
-    
-            // Multiply by X^k to shift the constant term to position k
-            if k > 0 {
-                let mut x_k = self.ctx.gen_zero_pt();
-                // x_k.as_mut_polynomial().get_mut_monomial(MonomialDegree(k)).set_coefficient(Scalar::one());
-                x_k.as_mut()[k] = Scalar::one();
-                rlwe_k.update_mask_with_mul_with_buf(&x_k.as_polynomial());
-                rlwe_k.update_body_with_mul_with_buf(&x_k.as_polynomial());
-            }
-    
-            // Accumulate
-            acc.update_with_add(&rlwe_k);
+        // let log_n = log2(n);
+        let g = input_rlwe_cts.len();
+        debug_assert!(g >= 1 && g.is_power_of_two(), "g must be a power of two");
+
+        // Stride: place input k at array position k * s, zeros elsewhere.
+        let s = n / g;
+        let log_g = log2(g);
+        
+        // Pad to exactly N inputs with zero ciphertexts.
+        // let mut cts: Vec<RLWECiphertext> = Vec::with_capacity(n);
+        // for k in 0..n {
+        //     if k < input_rlwe_cts.len() {
+        //         cts.push(input_rlwe_cts[k].clone());
+        //     } else {
+        //         cts.push(RLWECiphertext::allocate(self.ctx.poly_size, self.ctx.modulus));
+        //     }
+        // }
+
+        // Build strided array of length N.
+        let zero_ct = RLWECiphertext::allocate(self.ctx.poly_size, self.ctx.modulus);
+        let mut cts: Vec<RLWECiphertext> = vec![zero_ct; n];
+        for k in 0..g {
+            cts[k * s] = input_rlwe_cts[k].clone();
         }
-    
-        acc
+
+        // pack_lwes_cdks(&self.ctx, log_n, 0, &cts, subs_ksk_map)
+        pack_lwes_cdks(&self.ctx, log_g, 0, &cts, subs_ksk_map)
     }
 
-    pub fn multi_stage_rotation_computation_samp_ext_lwe_rlwe_ks(
-        &mut self,
-        database: Vec<u64>,
-        idx_ct_rlwe_stage1: RLWECiphertext,
-        idx_ct_rgsw_stage2: RGSWCiphertext,
-        lsb_bits: usize,
-        msb_bits: usize,
-        lwe_to_rlwe_ksk: &LWEtoRLWEKeyswitchKey,
+    /// Select one full original row (N coeffs) from the transposed DB.
+    /// `row_rgsw_ct` = RGSW(X^{N - r*}). Returns a poly with coeff j = db[r*·N + j].
+    // pub fn read_full_row_rotpack_cdks(
+    //     &self,
+    //     row_rgsw_ct: &RGSWCiphertext,
+    //     subs_ksk_map: &HashMap<usize, RLWEKeyswitchKey>,
+    // ) -> RLWECiphertext {
+    //     let n = self.ctx.poly_size.0;
+    //     debug_assert_eq!(self.data_enc.len(), n, "transposed DB must have exactly N polys");
+    // 
+    //     // rotate every transposed poly by the same r*, bringing coeff r* to position 0
+    //     let mut rotated_rlwe_cts: Vec<RLWECiphertext> = Vec::with_capacity(n);
+    //     for j in 0..n {
+    //         rotated_rlwe_cts.push(self.rlwe_ct_rotation(&self.data_enc[j], row_rgsw_ct));
+    //     }
+    //     // full CDKS pack (g = N, stride = 1): input j's constant coeff -> output coeff j
+    //     self.pack_first_coeffs_cdks(&rotated_rlwe_cts, subs_ksk_map)
+    // }
+
+    /// Select one full original row (N coeffs) from the transposed DB.
+    /// `row_rgsw_ct` = RGSW(X^{N - r*}). Returns a poly with coeff j = db[r*·N + j].
+    pub fn read_full_row_rotpack_cdks(
+        &self,
+        row_rgsw_ct: &RGSWCiphertext,
+        subs_ksk_map: &HashMap<usize, RLWEKeyswitchKey>,
     ) -> RLWECiphertext {
-        let coeff_per_poly  = 1 << lsb_bits;
-        let num_polynomials = 1 << msb_bits;
+        let n = self.ctx.poly_size.0;
+        debug_assert_eq!(self.data_enc.len(), n, "transposed DB must have exactly N polys");
     
-        let mut rot_stage1_cts: Vec<RLWECiphertext> = vec![];
-        for poly_idx in 0..num_polynomials {
-            let mut poly_data = self.ctx.gen_zero_pt();
-            for coeff_idx in 0..coeff_per_poly {
-                let db_idx = poly_idx * coeff_per_poly + coeff_idx;
-                let mut value = database[db_idx];
-                // poly_data.as_mut_polynomial().get_mut_monomial(MonomialDegree(coeff_idx)).set_coefficient(value);
-                poly_data.as_mut()[coeff_idx] = value;
-            }
+        // (1) transform the rotation RGSW ONCE, not per column
+        let fwd_fourier = {
+            let mut buf = self.ctx.gen_fft_ctx();
+            row_rgsw_ct.to_fourier(&mut buf)
+        };
     
-            let mut rot1_result = idx_ct_rlwe_stage1.clone();
-            rot1_result.update_mask_with_mul_with_buf(& poly_data.as_polynomial());
-            rot1_result.update_body_with_mul_with_buf(& poly_data.as_polynomial());
-            
-            // let mut poly_data_mut = poly_data.clone();
-            // rot1_result.update_mask_with_mul(& poly_data_mut.as_mut_polynomial());
-            // rot1_result.update_body_with_mul(& poly_data_mut.as_mut_polynomial());
+        // (2) rotate every transposed poly by r* in parallel (one FFT buffer per worker)
+        let ctx = &self.ctx;
+        let rotated_rlwe_cts: Vec<RLWECiphertext> = self.data_enc
+            .par_iter()
+            .map_init(
+                || ctx.gen_fft_ctx(),
+                |buf, col| {
+                    let mut r_j = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
+                    external_product_fourier(&mut r_j, &fwd_fourier, col, buf);
+                    r_j
+                },
+            )
+            .collect();
     
-            rot_stage1_cts.push(rot1_result);        
-        }
+        self.pack_first_coeffs_cdks(&rotated_rlwe_cts, subs_ksk_map)
+    }
+
+    pub fn write_full_row(
+        &mut self,
+        fwd_rgsw: &RGSWCiphertext,
+        rev_rgsw: &RGSWCiphertext,
+        ct_new: &RLWECiphertext,
+        lwe_rlwe_ksk: &LWEtoRLWEKeyswitchKey,
+    ) {
+        let n = self.ctx.poly_size.0;
+        debug_assert_eq!(self.data_enc.len(), n);
+        let lwe_size = LweSize(n + 1);
     
-        // pack the stage-1 constant terms into a single RLWE ciphertext
-        let packed = self.pack_first_coeffs_lwe(&rot_stage1_cts, lwe_to_rlwe_ksk);
+        // (1) transform each rotation RGSW ONCE, not per column
+        let (fwd_fourier, rev_fourier) = {
+            let mut buf = self.ctx.gen_fft_ctx();
+            (fwd_rgsw.to_fourier(&mut buf), rev_rgsw.to_fourier(&mut buf))
+        };
     
-        let result = self.rotation_stage2(&packed, &idx_ct_rgsw_stage2);
+        // split borrows so rayon can hold data_enc mutably while we read ctx
+        let ctx = &self.ctx;
+        self.data_enc.par_iter_mut().enumerate().for_each_init(
+            || ctx.gen_fft_ctx(),                 // one buffer per worker thread
+            |buf, (j, col)| {
+                // (a) forward-rotate this column: coeff r* -> position 0
+                let mut r_j = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
+                external_product_fourier(&mut r_j, &fwd_fourier, &*col, buf);
     
-        // packed
-        result
+                // (b) extract old (coeff 0 of r_j) and new (coeff j of ct_new)
+                let mut old_lwe = LWECiphertext::new(lwe_size, ctx.modulus);
+                old_lwe.fill_with_sample_extract(&r_j, MonomialDegree(0));
+                let mut new_lwe = LWECiphertext::new(lwe_size, ctx.modulus);
+                new_lwe.fill_with_sample_extract(ct_new, MonomialDegree(j));
+    
+                // (c) delta = new - old in the LWE domain -> ONE conversion
+                for (a, b) in new_lwe.0.as_mut().iter_mut().zip(old_lwe.0.as_ref().iter()) {
+                    *a = a.wrapping_sub(*b);
+                }
+                let delta = conv_lwe_to_rlwe(lwe_rlwe_ksk, &new_lwe, ctx);
+    
+                // (d) reverse-rotate: delta -> coeff r*, sign-corrected
+                let mut v_j = RLWECiphertext::allocate(ctx.poly_size, ctx.modulus);
+                external_product_fourier(&mut v_j, &rev_fourier, &delta, buf);
+    
+                // (e) add into the store
+                col.update_with_add(&v_j);
+            },
+        );
     }
 
 }
 
-// Setup the ORAM client and server for experimentation.
-pub fn setup_random_oram(rows: usize, cols: usize, params: TFHEParameters,) -> (Client, Server, Vec<u64>) {
-
-    //initialize client
+pub fn setup_random_oram_row_retrieval(rows: usize, cols: usize, params: TFHEParameters) -> (Client, Server, Vec<u64>) {
     let mut client = Client::new(rows, cols, params.clone());
-    
-    //create negative of secret key and encrypt it 
     let neg_sk_ct = client.gen_neg_sk();
-    
-    //Generate a dummy database vectors and encryt them
     let db = client.gen_dummy_database();
 
-    //initialize server
-    let server = Server::new(db.clone(), neg_sk_ct, params);
+    let n = client.ctx.poly_size.0;
+    let log_n = log2(n);
+    let log_t = client.ctx.codec.pt_modulus_bits();
+    let delta_scaled: Scalar = 1 << (Scalar::BITS as usize - log_t - log_n); // single pack => /N
 
+    let db_enc = client.encrypt_database_transposed(&db, delta_scaled);
+    let server = Server::new(db_enc, neg_sk_ct, params);
     (client, server, db)
 }
 
